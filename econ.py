@@ -65,11 +65,11 @@ class Artifact:
 		print("Bounty "+self.guid+" created")
 
 	#Return guid
-	def getGUID():
+	def getGUID(self):
 		return self.guid
 
 	#return name
-	def getName():
+	def getName(self):
 		return self.name
 
 #Description: 	User class to retain info to make an assertion and whether
@@ -126,7 +126,8 @@ class User:
 		if status is not 'OK':
 			print("Error in user.assertVerdict: ", sys.exc_info()[0])
 			return -1	
-
+		print("Verdict made")
+		print(response)
 		return 1
 
 	# Description: Unlock test account for use
@@ -170,6 +171,8 @@ def curl(command, label):
 	#split string into array
 	responseArr = strResponse.split('"')[1::2]
 
+	print(responseArr)
+
 	resultIndex = ''
 	if 'FAIL' in responseArr:
 		print (strResponse)
@@ -203,13 +206,15 @@ def jsonify(encoded):
 # Description: Posts # of bounties equal to or less than num files we have
 # Params: # to post 
 # return: array of bounty objects
-def postBounties(numToPost, files):
+def postBounties(numToPost, files, poster):
 	#hold all bounties
 	bountyArr = []
+	#unlock poster
+	poster.unlockAccount()
 	for i in range(0, numToPost):
-		tempBounty = Artifact(files[0], '625000000000000000')
+		tempBounty = Artifact(files[i], '625000000000000000')
 		tempBounty.postArtifact()
-		tempBounty.postBounty('10')
+		tempBounty.postBounty('50')
 		bountyArr.append(tempBounty)
 	return bountyArr
 
@@ -223,13 +228,13 @@ def getFiles():
 	#benign files
 	for file in os.listdir("./benignFiles/"):
 		tmp = File(file, "./benignFiles/", "benign")
-		print("Benign: "+file)
+		print("Benign: "+file+"\n")
 		files.append(tmp)
 
 	#malicious files
 	for file in os.listdir("./maliciousFiles/"):
 		tmp = File(file, "./maliciousFiles/", "malicious")
-		print("Malicious: "+file)
+		print("Malicious: "+file+"\n")
 		files.append(tmp)		
 
 	return files
@@ -252,15 +257,16 @@ def createUsers(dir, numToCreate, percentCorrect, bid):
 
 
 	#get file contents into local array
-	for file in os.listdir(dir):
+	for file in sorted(os.listdir(dir)):
 		path = os.path.join(dir, file)
 		f = open(path, 'r')
-		contents = f.read()
+		contents = f.readline()
 		f.close()
 		contents = contents.split('"')[1::2]
 		#address is always in same spot
+		print(contents[1])
 		addresses.append(contents[1])
- 	
+
 
 	#create user
 	for i in range(0, numToCreate):
@@ -295,7 +301,7 @@ def makeAllAssertions(userList, bountyList, artifactsAssessed, expertsPerArtifac
 	curGUID = ''
 	curBountyName = ''
 	percent = artifactsAssessed/100
-	numArtifacts = int(math.floor(percent*len(bountyList)))
+	numArtifacts = int(math.ceil(percent*len(bountyList)))
 
 
 	#make assertions on % of random bounties
@@ -305,6 +311,7 @@ def makeAllAssertions(userList, bountyList, artifactsAssessed, expertsPerArtifac
 		curGUID = bountyList[i].getGUID()
 		curName = bountyList[i].getName()
 		for expert in userList:
+			print(expert)
 			expert.assertVerdict(curGUID, curName)
 
 	return
@@ -330,7 +337,7 @@ if __name__ == "__main__":
 	#numUsers = input("Number of users to create(1-: ")
 
 
-	directory = './keystore'
+	keystore = './keystore'
 	accuracy = 70
 	bid = 10000000000
 	artifactsAssessed = 35
@@ -339,12 +346,12 @@ if __name__ == "__main__":
 	print("********************************")
 	print("CREATING USERS")
 	print("********************************")	
-	userList = createUsers(directory, expertsPerArtifact, accuracy, bid)
+	userList = createUsers(keystore, expertsPerArtifact, accuracy, bid)
 	
 	print("\n\n********************************")
-	print("UNLOCKING USERS")
+	print("UNLOCKING USERS - OMITTED AT THE MOMENT")
 	print("********************************")	
-	unlockUsers(userList)
+	#unlockUsers(userList)
 	
 	print("\n\n********************************")
 	print("OBTAINING FILES")
@@ -354,7 +361,8 @@ if __name__ == "__main__":
 	print("\n\n********************************")
 	print("CREATING BOUNTIES")
 	print("********************************")
-	bountyList = postBounties(len(fileList), fileList)	
+	#unlock account at [0] as thisaccount has eth
+	bountyList = postBounties(1, fileList, userList[0])
 	
 	print("\n\n********************************")
 	print("MAKING ASSERTIONS")
