@@ -27,6 +27,7 @@ class Artifact:
 		self.uri = ''
 		self.guid = ''
 		self.bid = bid
+		postedFlag = False
 
 	# Description: POST currenty artifact and store uri
 	# Params: self object
@@ -75,60 +76,15 @@ class Artifact:
 #Description: 	User class to retain info to make an assertion and whether
 #				or not current user is correct or not
 class User:
-	def __init__(self, address, password, correct, bid):
+	def __init__(self, address, password):
 		self.address = address
 		self.password = password
-		self.correct = correct
-		self.bid = bid
 
-	#TODO: mint NCT/ ETH(?)
-	#Find out how to observe balance differences/payouts
 	@classmethod
 	def createUser(self):
 		self.address = ''
 		self.password = 'password'
 		self.correct = False
-
-
-	# Description: Relay verdict to swarm
-	# Params: Verdict - true or false, guid - the bounty that was scanned
-	# return: status of post
-	# TODO: Parse response
-	def assertVerdict(self, guid, metaData):
-		response = ''
-		status = ''
-		verdict = ''
-
-		if self.verdict is True:
-			verdict = 'true'
-		else:
-			verdict = 'false'
-
-
-		headers = {'Content-Type': 'application/json',}
-		data = '{"bid": '+self.bid+', "mask": [true], "verdicts": ['+verdict+'], "metadata": "'+metaData+'"}'
-
-		try:
-			response = requests.post(HOST+'/bounties/'+self.guid+'/assertions', headers=headers, data=data)
-		except:
-			print("Error in user.assertVerdict: ", sys.exc_info()[0])
-			return -1
-
-		response = jsonify(response)
-
-		if response['status']:
-			status = response['status']
-		else:
-			print("Error in user.assertVerdict: ", sys.exc_info()[0])
-			return -1
-
-
-		if status is not 'OK':
-			print("Error in user.assertVerdict: ", sys.exc_info()[0])
-			return -1	
-		print("Verdict made")
-		print(response)
-		return 1
 
 	# Description: Unlock test account for use
 	# Params: N/A
@@ -207,15 +163,37 @@ def jsonify(encoded):
 # Params: # to post 
 # return: array of bounty objects
 def postBounties(numToPost, files, poster):
-	#hold all bounties
-	bountyArr = []
+	#hold all artifacts and bounties
+	artifactArr = []
+	bountyArr = [];
+
 	#unlock poster
 	poster.unlockAccount()
+
+	#create and post artifacts 
 	for i in range(0, numToPost):
-		tempBounty = Artifact(files[i], '625000000000000000')
-		tempBounty.postArtifact()
+		#stop early if bounties to post is greater than the number of files
+		if numToPost > len(files):
+			break;
+		tempArtifact = Artifact(files[i], '625000000000000000')
+		tempArtifact.postArtifact()
+		artifactArr.append(tempArtifact)
+
+	#post bounties
+	#artifactList iterator
+	numArtifacts = len(artifactArr)
+	curArtifact = 0
+	for i in range(0, numToPost):
+		#loop over artifacts when creating many bounties
+		if curArtifact > numArtifacts:
+			curArtifact = 0
+
+		tempBounty = artifactArr[curArtifact]
+		#will need to change time to account for 
 		tempBounty.postBounty('50')
 		bountyArr.append(tempBounty)
+		curArtifact+=1
+
 	return bountyArr
 
 
@@ -247,14 +225,8 @@ def getFiles():
 #			bid - average bid on a bounty		
 # return: array of class objects
 # TODO: Automate creation of users
-def createUsers(dir, numToCreate, percentCorrect, bid):
-	users = []
+def createAmbassador(dir):
 	addresses = []
-
-	#calc how many users will be correct
-	percent = percentCorrect/100
-	correctXperts = int(math.floor(percent*numToCreate))
-
 
 	#get file contents into local array
 	for file in sorted(os.listdir(dir)):
@@ -267,111 +239,36 @@ def createUsers(dir, numToCreate, percentCorrect, bid):
 		print(contents[1])
 		addresses.append(contents[1])
 
+	#Only create one ambassador since its the only account with eth at the moment
+	ambassador = User(addresses[0], PASSWORD)
 
-	#create user
-	for i in range(0, numToCreate):
-		if i < correctXperts:
-			users.append(User(addresses[i], 'password', True, bid))
-		else:
-			users.append(User(addresses[i], 'password', False, bid))
+	return ambassador
 
-
-	return users
-
-# Description: Unlock user accounts to make actions
-# Params: user array
-# return: N/A
-def unlockUsers(users):
-	for cur in users:
-		cur.unlockAccount()
-	return
-
-# Description: Experts make asasertions assert on bounties
-# Params:	userList - list of experts
-#			bountyList - list of bounties
-#			artifactsAssessed - # artifacts to assert on
-#			expertsPerArtifact - Avg. amount of experts per artifact
-# return: N/A
-# TODO: WORK IN PROGRESS
-#		Must account for #of users per artifact and maek sure average accuracy
-#		for each artifact
-def makeAllAssertions(userList, bountyList, artifactsAssessed, expertsPerArtifact):
-	
-	random.seed()
-	curGUID = ''
-	curBountyName = ''
-	percent = artifactsAssessed/100
-	numArtifacts = int(math.ceil(percent*len(bountyList)))
-
-
-	#make assertions on % of random bounties
-	#have x amount of experts assert on them
-	for i in range(0, numArtifacts):
-		random.randrange(0, len(bountyList)-1, 1)
-		curGUID = bountyList[i].getGUID()
-		curName = bountyList[i].getName()
-		for expert in userList:
-			print(expert)
-			expert.assertVerdict(curGUID, curName)
-
-	return
 
 if __name__ == "__main__":
-	#main
 
-	#get data points from user
-	#bid = input("Average bid: ")
+	#default bounties to post
+	numBountiesToPost = 1
 
-	#accuracy = input("Average Accuracy: ")
-
-	#bounty = input("Initial bounty pot: ")
-
-	#artifactsAssessed = input("Percent artifacts assessed by expert: ")
-
-	#expertsPerArtifact = input("Number of experts per artifact: ")
-
-	#arbiters = input("Number of arbiters: ")
-
-	#verified = input("Percent of artifacts verified by arbiter per day: ")
-
-	#numUsers = input("Number of users to create(1-: ")
-
+	#if an int is used in cmd arg then use that as # bounties to post
+	if (len(sys.argv) is 2):
+		if isinstance(sys.argv[1], int):
+			numBountiesToPost = sys.argv[1]
 
 	keystore = './keystore'
-	accuracy = 70
 	bid = 10000000000
-	artifactsAssessed = 35
-	expertsPerArtifact = 5
-	
-	print("********************************")
-	print("CREATING USERS")
-	print("********************************")	
-	userList = createUsers(keystore, expertsPerArtifact, accuracy, bid)
-	
-	print("\n\n********************************")
-	print("UNLOCKING USERS - OMITTED AT THE MOMENT")
-	print("********************************")	
-	#unlockUsers(userList)
 	
 	print("\n\n********************************")
 	print("OBTAINING FILES")
 	print("********************************")
 	fileList = getFiles()	
-	
-	print("\n\n********************************")
-	print("CREATING BOUNTIES")
-	print("********************************")
-	#unlock account at [0] as thisaccount has eth
-	bountyList = postBounties(1, fileList, userList[0])
-	
-	print("\n\n********************************")
-	print("MAKING ASSERTIONS")
-	print("********************************")
-	makeAllAssertions(userList, bountyList, artifactsAssessed, expertsPerArtifact)	
-	
-	#TODO: Watch payouts. Arbiter(s) make verdicts
-	print("\n\n********************************")
-	print("GET DATA")
-	print("********************************")
 
-	#Create text file to show data
+	ambassador = createAmbassador(keystore)
+	
+	print("\n\n********************************")
+	print("CREATING "+ str(numBountiesToPost) +"BOUNTIES")
+	print("********************************")
+	bountyList = postBounties(numBountiesToPost, fileList, ambassador)
+	print("\n\n********************************")
+	print("FINISHED BOUNTY CREATION")
+	print("********************************")
