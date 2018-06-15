@@ -1,15 +1,16 @@
 #TODO: Error handling
 
-import subprocess
 import requests
 import sys
-import shlex
 import os
-import math
-import random
+import websockets
+import asyncio
+import threading
+import time
 
-HOST = 'http://localhost:31337'
+HOST = 'localhost:31337'
 PASSWORD = 'password'
+ACCOUNT = 'af8302a3786a35abeddf19758067adc9a23597e5'
 
 
 # Description: File class to hold sufficient data for bounty creation
@@ -37,22 +38,24 @@ class Artifact:
 		print("Attempting to post "+ self.file.name)
 		response = ''
 
-
+		params = (('account', ACCOUNT))
 		file = {'file': (self.file.name, open(self.file.path, 'rb'))}
+		url = 'http://'+HOST+'/artifacts'
 
 		#send post to polyswarmd
 		try:
-			response = requests.post(HOST+'/artifacts', files=file)
+			response = requests.post(url, files=file)
 		except:
-			print("Error in artifact.postArtifact: ", sys.exc_info()[0])
+			print("Error in artifact.postArtifact: ", sys.exc_info())
 			print(self.file.name +" not posted")
-
+			sys.exit()
 
 		response = jsonify(response)
 
+
 		#check response is ok
-		if 'status' not in response:
-				print('No status found in response. Following error received:')
+		if 'status' not in response or 'result' not in response:
+				print('Missing key in response. Following error received:')
 				print(response['message'])
 				sys.exit()		
 
@@ -75,14 +78,16 @@ class Artifact:
 		#create data for post
 		headers = {'Content-Type': 'application/json'}
 		data = '{"amount": "'+self.bid+'", "uri": "'+self.uri+'", "duration": '+duration+'}'
+		url = 'http://'+HOST+'/bounties?'+ ACCOUNT
 		response = ''
 
 		try:
-			response = requests.post(HOST+'/bounties', headers=headers, data=data)
+			response = requests.post(url, headers=headers, data=data)
 		except:
-			print("Error in artifact.postBounty: ", sys.exc_info()[0])
+			print("Error in artifact.postBounty: ", sys.exc_info())
 			print(self.file.name +" bounty not posted.")
-		#
+
+
 		response = jsonify(response)
 
 		#check status is ok 
@@ -102,6 +107,7 @@ class Artifact:
 		#done with bounty
 		print("Bounty "+self.guid+" created")
 
+
 	#Return guid
 	def getGUID(self):
 		return self.guid
@@ -109,50 +115,6 @@ class Artifact:
 	#return name
 	def getName(self):
 		return self.name
-
-#Description: 	User class to retain info to make an assertion and whether
-#				or not current user is correct or not
-class User:
-	def __init__(self, address, password):
-		self.address = address
-		self.password = password
-
-	# Description: Unlock test account for use
-	# Params: N/A
-	# return: True for success, False for fail
-	# TODO: handle errors better
-	def unlockAccount(self):
-		print("Attempting to unlock user "+self.address)
-		response = ''
-		status = ''
-
-		headers = {'Content-Type': 'application/json'}
-		dataUnlock = '{"password": "'+self.password+'"}'
-		try:
-			response = requests.post(HOST+'/accounts/'+self.address+'/unlock', headers=headers, data=dataUnlock)
-		
-		except:
-			print("Error in user.unlockAccount: ", sys.exc_info()[0])
-			return -1
-
-		response = jsonify(response)
-
-		#check status is ok
-		if 'status' not in response:
-			print(response)
-			print("Error in user.unlockAccount: ", sys.exc_info()[0])
-			sys.exit()
-
-		status = response['status']
-		
-		if status != 'OK':
-			print("Error in user.unlockAccount: ", sys.exc_info()[0])
-			print(status)
-			sys.exit()
-
-
-		print("Succesfully unlocked: "+self.address)
-
 
 # Description: Helper function to create  JOSNobject of given object 
 # Params: str to be decoded
@@ -203,6 +165,83 @@ def postBounties(numToPost, files):
 	return bountyArr
 
 
+# Description: Create websocket thread to handle transaction signing for sent bounties
+class transactionListener(threading.Thread):
+	def run(self):
+		asyncio.get_event_loop().run_until_complete(self.waitForEvent())
+
+	async def waitForEvent(self):
+		print("Listening for transactions...")
+		async with websockets.connect('ws://'+HOST+'/transactions') as websocket:
+			while True:
+				try:
+					#Store transaction from the websocket
+					event = await websocket.recv()
+
+					#get it signed
+					signedTx = signTransaction(event)
+
+					#send object back to polyswarmd
+					response = await websocket.send(signedTx)
+					print(response)
+				except Exception as e:
+					#print error and close connection
+					print(e)
+					break
+
+
+# Description: receive transaction from bounty creation. Sign and return object
+# to be sent
+# Params: Raw transaction from /transaction
+# Return: toSend object expected by polyswarmd. id, chain id, and rawtrans
+def signTransaction(event):
+
+	#change format to json for easy access
+	tx = json.loads(event)
+	print(tx)
+	data = tx['data']
+	transaction = {}
+	toSend = {}
+
+	# event comes in as string and must be pieced back together to create a transaction
+	#increment nonce by one for signing
+	try:
+		transaction = {
+			'to': data['to'],
+			'value': data['value'],
+			'gas': data['gas'],
+			'gasPrice': data['gasPrice'],
+			'nonce': data['nonce']
+		}
+	except KeyError as e:
+		print('*****KeyError*****')
+		print(e+' does not exist in transaction received from polsywarmd')
+		sys.exit()
+
+
+
+	#get private key to sign
+	private_key = ''
+	with open('./keystore/UTC--2018-03-08T04-05-00.589797373Z--af8302a3786a35abeddf19758067adc9a23597e5', 'r') as keyfile:
+		encrypted_key = keyfile.read()
+		private_key = w3.eth.account.decrypt(encrypted_key, 'password')
+	
+	#sign
+	sign = w3.eth.account.signTransaction(transaction, private_key)
+	try:
+		#this may be inccorect
+		toSend = {
+			'id': tx['id'], 
+			'chainId': data['chainId'],
+			'data': str(data['data'])
+		}
+	except KeyError as e:
+		print('*****KeyError*****')
+		print(e)
+		sys.exit()
+
+	return toSend
+
 # Description: Retrieve files from directories to use as artifacts
 # Params:
 # return: array of file objects
@@ -225,30 +264,6 @@ def getFiles():
 
 	return files
 
-
-# Description: Obtain list of accounts from polyswarmd and return the first entry		
-# return: address of a user
-# TODO: Handle no users
-def setAccount():
-	response = ''
-
-	try:
-		response = requests.get(+HOST+'/accounts')
-	except:
-		print(response)
-		print("Error in setAccount: ", sys.exc_info()[0])
-		sys.exit()
-
-	accountList = jsonify(response)
-
-
-	if accountList['status'] != "OK":
-		sys.exit("invalid accounts")
-
-	#A bit hardcoded
-	# Might want to change to looking at keystore or unlocking out of module
-	return accountList['result'][0]
-
 if __name__ == "__main__":
 
 	#default bounties to post
@@ -265,6 +280,13 @@ if __name__ == "__main__":
 	print("********************************")
 	fileList = getFiles()	
 	
+	print("\n\n********************************")
+	print("Starting Transaction Listener")
+	print("********************************")
+	listener = transactionListener()
+	listener.start()
+	time.sleep(1)
+
 
 	print("\n\n********************************")
 	print("CREATING "+ str(numBountiesToPost) +" BOUNTIES")
