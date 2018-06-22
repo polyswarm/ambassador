@@ -7,19 +7,21 @@ import websockets
 import asyncio
 import threading
 import time
+import json
+from web3.auto import w3
 
 HOST = 'localhost:31337'
 PASSWORD = 'password'
 ACCOUNT = 'af8302a3786a35abeddf19758067adc9a23597e5'
+ARTIFACT_DIRECTORY = './artifacts/'
 
 
 # Description: File class to hold sufficient data for bounty creation
 # TODO: 
 class File:
-	def __init__(self, name, path, intent):
+	def __init__(self, name, path):
 		self.name = name
 		self.path = path+name
-		self.intent = intent
 
 class Artifact:
 	def __init__(self, file, bid):
@@ -78,7 +80,7 @@ class Artifact:
 		#create data for post
 		headers = {'Content-Type': 'application/json'}
 		data = '{"amount": "'+self.bid+'", "uri": "'+self.uri+'", "duration": '+duration+'}'
-		url = 'http://'+HOST+'/bounties?'+ ACCOUNT
+		url = 'http://'+HOST+'/bounties?account='+ACCOUNT
 		response = ''
 
 		try:
@@ -168,42 +170,46 @@ def postBounties(numToPost, files):
 # Description: Create websocket thread to handle transaction signing for sent bounties
 class transactionListener(threading.Thread):
 	def run(self):
-		asyncio.get_event_loop().run_until_complete(self.waitForEvent())
+		eventLoop = asyncio.new_event_loop()
+		asyncio.set_event_loop(eventLoop)
+		asyncio.ensure_future(waitForEvent())
+		eventLoop.run_forever()
 
-	async def waitForEvent(self):
-		print("Listening for transactions...")
-		async with websockets.connect('ws://'+HOST+'/transactions') as websocket:
-			while True:
-				try:
-					#Store transaction from the websocket
-					event = await websocket.recv()
+async def waitForEvent():	
+	print("Listening for transactions...")
+	async with 	websockets.connect('ws://'+HOST+'/transactions') as websocket:
+		while True:
+			try:
+				event = await websocket.recv()
 
-					#get it signed
-					signedTx = signTransaction(event)
+				#catch transaction
+				signedTx = signTransaction(event)
 
-					#send object back to polyswarmd
-					response = await websocket.send(signedTx)
-					print(response)
-				except Exception as e:
-					#print error and close connection
-					print(e)
-					break
+				print('Sending signed object...')
+				websocket.send(json.dumps(signedTx))
+				print('Sent')
+			except Exception as e:
+				#print error and close connection
+				print(e)
+				break
+	eventLoop.stop()
 
 
-# Description: receive transaction from bounty creation. Sign and return object
-# to be sent
-# Params: Raw transaction from /transaction
-# Return: toSend object expected by polyswarmd. id, chain id, and rawtrans
+# Description: 	Given a transaction, get the private key for the current account. 
+#				sign the transactio nadn return an object with id, chainid, and signedtx
+# Params: event - raw transaction
+# Return: object with {id, chaindId, rawTx}
+# TODO: CHANGE DIR WITH ACCOUNT
 def signTransaction(event):
+	print('Transaction received. Attempting to sign...')
 
 	#change format to json for easy access
 	tx = json.loads(event)
-	print(tx)
 	data = tx['data']
 	transaction = {}
 	toSend = {}
 
-	# event comes in as string and must be pieced back together to create a transaction
+	# event comes in as json object and must be pieced back together to create a transaction
 	#increment nonce by one for signing
 	try:
 		transaction = {
@@ -228,17 +234,20 @@ def signTransaction(event):
 	
 	#sign
 	sign = w3.eth.account.signTransaction(transaction, private_key)
+	print('Signed')
 	try:
-		#this may be inccorect
+		#to send consists of id, chaindid, and signedtx data
+		#Note txsign is 
 		toSend = {
 			'id': tx['id'], 
 			'chainId': data['chainId'],
-			'data': str(data['data'])
+			'data': bytes(sign['rawTransaction']).hex()
 		}
 	except KeyError as e:
 		print('*****KeyError*****')
 		print(e)
 		sys.exit()
+
 
 	return toSend
 
@@ -250,24 +259,16 @@ def signTransaction(event):
 def getFiles():
 	files = []
 
-	#benign files
-	for file in os.listdir("./benignFiles/"):
-		tmp = File(file, "./benignFiles/", "benign")
-		print("Benign: "+file+"\n")
-		files.append(tmp)
-
-	#malicious files
-	for file in os.listdir("./maliciousFiles/"):
-		tmp = File(file, "./maliciousFiles/", "malicious")
-		print("Malicious: "+file+"\n")
-		files.append(tmp)		
+	for file in os.listdir(ARTIFACT_DIRECTORY):
+		tmp = File(file, ARTIFACT_DIRECTORY)
+		files.append(tmp)	
 
 	return files
 
 if __name__ == "__main__":
 
 	#default bounties to post
-	numBountiesToPost = 1
+	numBountiesToPost = 2
 
 	#if an int is used in cmd arg then use that as # bounties to post
 	if (len(sys.argv) is 2):
