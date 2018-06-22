@@ -2,7 +2,6 @@ from python:3
 
 ADD /bounties /bounties 
 ADD . .
-RUN pip install requests
-RUN pip install websockets
+run pip install -r requirements.txt
 
 CMD ["python3", "dummyAmbassador.py"]
