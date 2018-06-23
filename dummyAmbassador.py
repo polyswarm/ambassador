@@ -186,13 +186,12 @@ async def waitForEvent():
 				signedTx = signTransaction(event)
 
 				print('Sending signed object...')
-				websocket.send(json.dumps(signedTx))
+				await websocket.send(json.dumps(signedTx))
 				print('Sent')
 			except Exception as e:
 				#print error and close connection
 				print(e)
 				break
-	eventLoop.stop()
 
 
 # Description: 	Given a transaction, get the private key for the current account. 
