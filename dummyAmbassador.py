@@ -13,7 +13,7 @@ from web3.auto import w3
 HOST = 'localhost:31337'
 PASSWORD = 'password'
 ACCOUNT = 'af8302a3786a35abeddf19758067adc9a23597e5'
-ARTIFACT_DIRECTORY = './artifacts/'
+ARTIFACT_DIRECTORY = './bounties/'
 
 
 # Description: File class to hold sufficient data for bounty creation
@@ -28,9 +28,7 @@ class Artifact:
 		#file object
 		self.file = file
 		self.uri = ''
-		self.guid = ''
 		self.bid = bid
-		postedFlag = False
 
 	# Description: POST currenty artifact and store uri
 	# Params: self object
@@ -90,33 +88,24 @@ class Artifact:
 			print(self.file.name +" bounty not posted.")
 
 
-		response = jsonify(response)
+		print(response)#) = jsonify(response)
 
 		#check status is ok 
-		if 'status' not in response:
-				print('No status found in response:')
-				print(response['message'])
-				sys.exit()			
+		#if 'status' not in response:
+		#		print('No status found in response:')
+		#		print(response['message'])
+		#		sys.exit()			
 
-		if response['status'] is not 'OK':
-			print("Status not OK:")
-			print(response['message'])
-			sys.exit()
+		#if response['status'] is not 'OK':
+		#	print("Status not OK:")
+		#	print(response['message'])
+		#	sys.exit()
 
 		#keep guid
-		self.guid = response['guid']
+		#self.guid = response['guid']
 
 		#done with bounty
-		print("Bounty "+self.guid+" created")
-
-
-	#Return guid
-	def getGUID(self):
-		return self.guid
-
-	#return name
-	def getName(self):
-		return self.name
+		print("Bounty "+self.file.name+" created")
 
 # Description: Helper function to create  JOSNobject of given object 
 # Params: str to be decoded
@@ -160,7 +149,9 @@ def postBounties(numToPost, files):
 
 		tempBounty = artifactArr[curArtifact]
 		#will need to change time to account for 
-		tempBounty.postBounty('50')
+		tempBounty.postBounty('5')
+		#buffer bounty posts
+		time.sleep(1)
 		bountyArr.append(tempBounty)
 		curArtifact+=1
 
@@ -283,9 +274,9 @@ if __name__ == "__main__":
 	print("\n\n********************************")
 	print("Starting Transaction Listener")
 	print("********************************")
-	listener = transactionListener()
-	listener.start()
-	time.sleep(1)
+	#listener = transactionListener()
+	#listener.start()
+	#time.sleep(1)
 
 
 	print("\n\n********************************")
