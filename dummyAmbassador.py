@@ -113,7 +113,7 @@ class Artifact:
 		#self.guid = response['guid']
 
 		#done with bounty
-		print("Bounty "+self.file.name+" created")
+		print("Bounty "+self.file.name+" sent. May not have been created.")
 
 # Description: Helper function to create  JOSNobject of given object 
 # Params: str to be decoded
