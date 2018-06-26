@@ -12,7 +12,7 @@ from web3.auto import w3
 
 HOST = 'localhost:31337'
 PASSWORD = 'password'
-ACCOUNT = 'af8302a3786a35abeddf19758067adc9a23597e5'
+ACCOUNT = '0x4b1867c484871926109e3c47668d5c0938ca3527'
 ARTIFACT_DIRECTORY = './bounties/'
 
 
@@ -65,30 +65,38 @@ class Artifact:
 			sys.exit()
 
 		#hold response URI
-		print("Posted successfully \n")
+		print("Posted to IPFS successfully \n")
 		self.uri = response['result']
 
 	# Description: POST self as artifact
 	# Params: 	Duration - how long to keep bounty active for test
 	#			Amount - 
 	# return: artifact file contents
-	def postBounty(self, duration):
+	def postBounty(self, duration,basenonce):
 		print("Attempting to post bounty "+ self.uri)
-
 		#create data for post
 		headers = {'Content-Type': 'application/json'}
-		data = '{"amount": "'+self.bid+'", "uri": "'+self.uri+'", "duration": '+duration+'}'
+		postnonce = ''
+		postnonce = str(basenonce)
+		print ('base nonce is ' + postnonce)
+		data = dict()
+		data['amount']=self.bid
+		data['uri']=self.uri
+		data['duration']=duration
+		data['base_nonce']=basenonce
+		#data = '{"amount": "'+self.bid+'", "uri": "'+self.uri+'", "duration": '+duration+', "base_nonce": '+postnonce+'"}'
 		url = 'http://'+HOST+'/bounties?account='+ACCOUNT
 		response = ''
 
 		try:
-			response = requests.post(url, headers=headers, data=data)
+			response = requests.post(url, headers=headers, data=json.dumps(data))
 		except:
 			print("Error in artifact.postBounty: ", sys.exc_info())
 			print(self.file.name +" bounty not posted.")
 
 
-		print(response)#) = jsonify(response)
+		print(response)
+#) = jsonify(response)
 
 		#check status is ok 
 		#if 'status' not in response:
@@ -128,7 +136,9 @@ def postBounties(numToPost, files):
 	#hold all artifacts and bounties
 	artifactArr = []
 	bountyArr = [];
-
+	print ("trying to get nonce")
+	nonce = w3.eth.getTransactionCount(w3.toChecksumAddress(ACCOUNT))
+	print ("nonce received: "+str(nonce))		
 	#create and post artifacts 
 	for i in range(0, numToPost):
 		#stop early if bounties to post is greater than the number of files
@@ -149,7 +159,8 @@ def postBounties(numToPost, files):
 
 		tempBounty = artifactArr[curArtifact]
 		#will need to change time to account for 
-		tempBounty.postBounty('5')
+		tempBounty.postBounty(5,nonce)
+		nonce +=2
 		#buffer bounty posts
 		time.sleep(1)
 		bountyArr.append(tempBounty)

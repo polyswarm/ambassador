@@ -19,7 +19,7 @@ def txsigner():
         key = web3.eth.account.decrypt(f.read(), PASSWORD)
 
     try:
-        while True:
+        while websocket.open:
             msg = yield from websocket.recv()
             msg = json.loads(msg)
 
