@@ -6,6 +6,7 @@ import os
 import websockets
 import asyncio
 import threading
+from time import sleep
 import time
 import json
 from web3.auto import w3
@@ -113,7 +114,7 @@ class Artifact:
 		#self.guid = response['guid']
 
 		#done with bounty
-		print("Bounty "+self.file.name+" sent. May not have been created.")
+		print("Bounty "+self.file.name+" sent. May not have been created unless response is [200].")
 
 # Description: Helper function to create  JOSNobject of given object 
 # Params: str to be decoded
@@ -282,20 +283,23 @@ if __name__ == "__main__":
 	print("********************************")
 	fileList = getFiles()	
 	
-	print("\n\n********************************")
-	print("Starting Transaction Listener")
-	print("********************************")
+	#print("\n\n********************************")
+	#print("Starting Transaction Listener")
+	#print("********************************")
 	#listener = transactionListener()
 	#listener.start()
 	#time.sleep(1)
 
 
-	print("\n\n********************************")
-	print("CREATING "+ str(numBountiesToPost) +" BOUNTIES")
-	print("********************************")
+	print("\n\n******************************************************")
+	print("CREATING "+ str(numBountiesToPost) +" BOUNTIES EVERY 10 SEC")
+	print("********************************************************")
+	cnt=0
+	#@while True:
 	bountyList = postBounties(numBountiesToPost, fileList)
-
-
+	sleep(10)
+	cnt +=1
+	print(str(cnt)+"iteration complete...")
 	print("\n\n********************************")
-	print("FINISHED BOUNTY CREATION")
-	print("********************************")
+	print("FINISHED BOUNTY CREATION, EXITING AMBASSADOR")
+	print("********************************\n\n")

@@ -6,7 +6,7 @@ import websockets
 
 from web3.auto import w3 as web3
 
-POLYSWARMD_URI = 'ws://localhost:31337/transactions'
+POLYSWARMD_URI = 'ws://polyswarmd:31337/transactions'
 KEYFILE = 'keyfile'
 PASSWORD = 'password'
 
