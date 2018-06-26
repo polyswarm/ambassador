@@ -11,7 +11,7 @@ before_script:
 build-master:
   stage: build
   variables:
-    -DOCKER_FULL_PATH=index.docker.io/polyswarm/ambassador
+    - DOCKER_FULL_PATH=index.docker.io/polyswarm/ambassador
   script:
     - docker login -u "$SWARM_DOCKER_USER" -p "$SWARM_DOCKER_PASSWORD" $DOCKER_SWARM_REGISTRY && docker build -t $DOCKER_FULL_PATH -f docker/Dockerfile .
     - docker push "$DOCKER_FULL_PATH"
