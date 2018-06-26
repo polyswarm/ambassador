@@ -9,9 +9,13 @@ import threading
 from time import sleep
 import time
 import json
-from web3.auto import w3
+from web3 import Web3,HTTPProvider
+from web3.middleware import geth_poa_middleware
 
-HOST = 'localhost:31337'
+w3=Web3(HTTPProvider('http://geth:8545'))
+w3.middleware_stack.inject(geth_poa_middleware,layer=0)
+
+HOST = 'polyswarmd:31337'
 PASSWORD = 'password'
 ACCOUNT = '0x4b1867c484871926109e3c47668d5c0938ca3527'
 ARTIFACT_DIRECTORY = './bounties/'
@@ -113,8 +117,8 @@ class Artifact:
 		#keep guid
 		#self.guid = response['guid']
 
-		#done with bounty
-		print("Bounty "+self.file.name+" sent. May not have been created unless response is [200].")
+		#
+		print("Bounty "+self.file.name+" sent to polyswarmd. May not have been created unless response is [200].")
 
 # Description: Helper function to create  JOSNobject of given object 
 # Params: str to be decoded
@@ -138,6 +142,7 @@ def postBounties(numToPost, files):
 	artifactArr = []
 	bountyArr = [];
 	print ("trying to get nonce")
+	
 	nonce = w3.eth.getTransactionCount(w3.toChecksumAddress(ACCOUNT))
 	print ("nonce received: "+str(nonce))		
 	#create and post artifacts 
@@ -294,12 +299,12 @@ if __name__ == "__main__":
 	print("\n\n******************************************************")
 	print("CREATING "+ str(numBountiesToPost) +" BOUNTIES EVERY 10 SEC")
 	print("********************************************************")
-	cnt=0
-	#@while True:
+	#cnt=0
+	#while (cnt<10):
 	bountyList = postBounties(numBountiesToPost, fileList)
-	sleep(10)
-	cnt +=1
-	print(str(cnt)+"iteration complete...")
+	#cnt +=1
+	print("iteration complete,sleeping 10...")
+	sleep(5)
 	print("\n\n********************************")
 	print("FINISHED BOUNTY CREATION, EXITING AMBASSADOR")
 	print("********************************\n\n")
