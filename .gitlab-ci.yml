@@ -10,16 +10,18 @@ before_script:
 
 build-master:
   stage: build
+  variables:
+    -DOCKER_FULL_PATH=index.docker.io/polyswarm/ambassador
   script:
-    - docker build --pull -t "$CI_REGISTRY_IMAGE" -f docker/Dockerfile .
-    - docker push "$CI_REGISTRY_IMAGE"
+    - docker login -u "$SWARM_DOCKER_USER" -p "$SWARM_DOCKER_PASSWORD" $DOCKER_SWARM_REGISTRY && docker build -t $DOCKER_FULL_PATH -f docker/Dockerfile .
+    - docker push "$DOCKER_FULL_PATH"
   only:
     - master
 
 build:
   stage: build
   script:
-    - docker build --pull -f docker/Dockerfile -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" .
+    - docker build --pull -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" .
     - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
   except:
     - master
