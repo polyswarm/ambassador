@@ -16,31 +16,33 @@ def txsigner():
     websocket = yield from websockets.connect(POLYSWARMD_URI)
 
     with open(KEYFILE, 'r') as f:
+        g=f
         key = web3.eth.account.decrypt(f.read(), PASSWORD)
-
+        acct = json.loads(g.read())
+        acct = '0x'+ acct['address']
     try:
         while websocket.open:
             msg = yield from websocket.recv()
             msg = json.loads(msg)
+            if (msg['to']==acct):
+                id_ = msg['id']
+                tx = msg['data']
+                chainId = tx['chainId']
 
-            id_ = msg['id']
-            tx = msg['data']
-            chainId = tx['chainId']
+                signed = web3.eth.account.signTransaction(tx, key)
+                data = bytes(signed['rawTransaction']).hex()
 
-            signed = web3.eth.account.signTransaction(tx, key)
-            data = bytes(signed['rawTransaction']).hex()
+                print(tx, data)
 
-            print(tx, data)
+                reply = {
+                    'id': id_,
+                    'chainId': chainId,
+                    'data': data,
+                }
 
-            reply = {
-                'id': id_,
-                'chainId': chainId,
-                'data': data,
-            }
+                print(reply)
 
-            print(reply)
-
-            yield from websocket.send(json.dumps(reply))
+                yield from websocket.send(json.dumps(reply))
     finally:
         yield from websocket.close()
 
