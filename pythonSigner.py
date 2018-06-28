@@ -9,22 +9,24 @@ from web3.auto import w3 as web3
 POLYSWARMD_URI = 'ws://polyswarmd:31337/transactions'
 KEYFILE = 'keyfile'
 PASSWORD = 'password'
-
-
+f = open(KEYFILE,'r')
+acct = json.loads(f.read())
+acct = '0x'+ acct['address']
+print("signer init: using account: "+acct)
 @asyncio.coroutine
-def txsigner():
+def txsigner(account):
     websocket = yield from websockets.connect(POLYSWARMD_URI)
 
     with open(KEYFILE, 'r') as f:
-        g=f
         key = web3.eth.account.decrypt(f.read(), PASSWORD)
-        acct = json.loads(g.read())
-        acct = '0x'+ acct['address']
     try:
         while websocket.open:
+            print ("websocket is open. account in use: "+account)
             msg = yield from websocket.recv()
             msg = json.loads(msg)
-            if (msg['to']==acct):
+            print ('to field of message:'+msg['to'])
+            msgto = ''+msg['to']
+            if (msgto.upper()==account.upper()):
                 id_ = msg['id']
                 tx = msg['data']
                 chainId = tx['chainId']
@@ -48,4 +50,5 @@ def txsigner():
 
 
 if __name__ == '__main__':
-    asyncio.get_event_loop().run_until_complete(txsigner())
+    print("signer main: account is"+acct)
+    asyncio.get_event_loop().run_until_complete(txsigner(acct))
