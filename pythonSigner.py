@@ -24,8 +24,12 @@ def txsigner(account):
             print ("websocket is open. account in use: "+account)
             msg = yield from websocket.recv()
             msg = json.loads(msg)
-            print ('to field of message:'+msg['to'])
             msgto = ''+msg['to']
+            print (msgto.upper()==account.upper())
+            if (msgto.upper()!=account.upper()):
+                print ('closing socket..')
+                websocket.close()
+            print ('to field of message:'+msg['to'])
             if (msgto.upper()==account.upper()):
                 id_ = msg['id']
                 tx = msg['data']
