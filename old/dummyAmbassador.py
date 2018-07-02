@@ -17,7 +17,8 @@ w3.middleware_stack.inject(geth_poa_middleware,layer=0)
 
 HOST = 'polyswarmd:31337'
 PASSWORD = 'password'
-ACCOUNT = '0x4b1867c484871926109e3c47668d5c0938ca3527'
+ACCOUNT = '0x'+json.loads(open('keyfile','r').read())['address']
+print('Using account: '+ACCOUNT)
 ARTIFACT_DIRECTORY = './bounties/'
 
 
