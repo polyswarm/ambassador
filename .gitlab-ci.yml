@@ -9,6 +9,7 @@ build-master:
     - master
   variables:
     DOCKER_FULL_PATH: index.docker.io/polyswarm/ambassador
+
     
   script:
     - docker login -u "$CI_CUSTOM_DOCKER_HUB_USERNAME" -p "$CI_CUSTOM_DOCKER_HUB_PASSWORD" $CI_CUSTOM_DOCKER_HUB_URI && docker build -t $DOCKER_FULL_PATH -f docker/Dockerfile .
@@ -17,7 +18,11 @@ build-master:
 
 build:
   stage: build
+
+    variables:
+        DOCKER_FULL_PATH: "$CI_REGISTRY_IMAGE/$CI_PROJECT_NAME:$CI_COMMIT_REF_NAME"
+
   script:
-    - docker build --pull -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" .
+    - docker build -t $DOCKER_FULL_PATH -f docker/Dockerfile .
   except:
     - master
