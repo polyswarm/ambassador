@@ -19,8 +19,8 @@ build-master:
 build:
   stage: build
 
-    variables:
-        DOCKER_FULL_PATH: "$CI_REGISTRY_IMAGE/$CI_PROJECT_NAME:$CI_COMMIT_REF_NAME"
+  variables:
+    DOCKER_FULL_PATH: "$CI_REGISTRY_IMAGE/$CI_PROJECT_NAME:$CI_COMMIT_REF_NAME"
 
   script:
     - docker build -t $DOCKER_FULL_PATH -f docker/Dockerfile .
