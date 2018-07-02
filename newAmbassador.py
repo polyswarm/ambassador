@@ -117,9 +117,9 @@ class Artifact:
                     s = web3.eth.account.signTransaction(tx, key)
                     raw = bytes(s['rawTransaction']).hex()
                     signed.append(raw)
-                    print('***********************\nPOSTING SIGNED TXN # ' + str(cnt) + '\n***********************\n')
-                    r = requests.post('http://polyswarmd:31337/transactions', json={'transactions': signed})
-                    print(r.json())
+                print('***********************\nPOSTING SIGNED TXNs, count #= ' + str(cnt) + '\n***********************\n')
+                r = requests.post('http://polyswarmd:31337/transactions', json={'transactions': signed})
+                print(r.json())
                         
                 print("Bounty "+self.file.name+" sent to polyswarmd. May not have been created unless response is [200] and you signed it successfully.")
 

@@ -5,5 +5,5 @@
 python pythonSigner.py >/dev/null & 
 for i in `seq 1 10`
 do
-	python dummyAmbassador.py  
+	python newAmbassador.py  
 done
