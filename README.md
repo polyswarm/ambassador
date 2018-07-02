@@ -1,6 +1,3 @@
-### Economic Testing Notes
-# 5/17/18
-- clamav as arbiter
-- this repo's code as ambassador/malware pump creating bounties
-- microengine(bitdefender) is the expert
-- dockerized
+`docker build -t polyswarm/ambassador -f docker/Dockerfile .`
+
+This repo is for pumping malware through polyswarmd, for use with the test.yml file of `polyswarm/orchestration` repo
