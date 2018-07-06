@@ -9,11 +9,9 @@ build-master:
     - master
   variables:
     DOCKER_FULL_PATH: index.docker.io/polyswarm/ambassador
-
-    
   script:
     - docker login -u "$CI_CUSTOM_DOCKER_HUB_USERNAME" -p "$CI_CUSTOM_DOCKER_HUB_PASSWORD" $CI_CUSTOM_DOCKER_HUB_URI && docker build -t $DOCKER_FULL_PATH -f docker/Dockerfile .
-    - docker push "$DOCKER_FULL_PATH"
+    #- docker push "$DOCKER_FULL_PATH"
 
 
 build:
