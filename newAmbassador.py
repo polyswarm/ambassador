@@ -87,7 +87,7 @@ class Artifact:
                 data['uri']=self.uri
                 data['duration']=duration
                 
-                url = 'http://'+HOST+'/bounties?account='+ACCOUNT #'&base_nonce='+postnonce
+                url = 'http://'+HOST+'/bounties?account='+ACCOUNT+'&base_nonce='+postnonce
                 response = ''
                 print('attempting to post bounty: ' + self.uri + ' to: ' + url + '\n*****************************')  
                 try:
