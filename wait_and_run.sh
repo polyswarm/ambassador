@@ -6,5 +6,5 @@
 #python3 pythonSigner.py& # >/dev/null & 
 for i in `seq 1 10`
 do
-	python newAmbassador.py
+	python newAmbassador.py | grep value
 done
