@@ -1,6 +1,6 @@
 #! /bin/bash
 
-./scripts/wait_for_it.sh $POLYSWARM_HOST:$POLYSWARM_PORT -t 0
+./scripts/wait_for_it.sh $POLYSWARMD_HOST:$POLYSWARMD_PORT -t 0
 #sleep 5
 #echo "starting signer..."
 #python3 pythonSigner.py& # >/dev/null & 
