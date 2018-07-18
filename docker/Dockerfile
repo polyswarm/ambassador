@@ -1,4 +1,4 @@
-from python:3
+from python:3.5
 
 ADD /bounties /bounties 
 add /requirements.txt /requirements.txt
