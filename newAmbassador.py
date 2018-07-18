@@ -20,7 +20,7 @@ ARTIFACT_DIRECTORY = './bounties/'
 POLYSWARMD_BOUNTY_ADDRESS='0xdE4E1Da8AcD61253948eE0dfa2377137a42240B8'
 POLYSWARMD_NECTAR_ADDRESS='0x21262bf29ff08691c8a72bc6f22f791996e1891f'
 print('using account ' + ACCOUNT + " ...")
-web3.eth.enable_unaudited_features()
+#web3.eth.enable_unaudited_features()
 
 # Description: File class to hold sufficient data for bounty creation
 # TODO: 
