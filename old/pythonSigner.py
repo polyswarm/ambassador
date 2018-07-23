@@ -4,6 +4,7 @@ import asyncio
 import json
 import websockets
 
+from websockets.exceptions import ConnectionClosed
 from web3.auto import w3 as web3
 
 POLYSWARMD_URI = 'ws://polyswarmd:31337/transactions'
@@ -55,4 +56,8 @@ def txsigner(account):
 
 if __name__ == '__main__':
     print("signer main: account is"+acct)
-    asyncio.get_event_loop().run_until_complete(txsigner(acct))
+    while True:
+        try:
+            asyncio.get_event_loop().run_until_complete(txsigner(acct))
+        except ConnectionClosed as e:
+            print('Hit a connectionclosed event - attempting to restart : ' + str(e))
