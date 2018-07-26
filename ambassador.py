@@ -4,23 +4,21 @@ import json
 import sys
 import os
 import asyncio
-import threading
-from time import sleep
-import time
+
+
 from web3.auto import w3 as web3
 from web3 import Web3,HTTPProvider
 from web3.middleware import geth_poa_middleware
-w3=Web3(HTTPProvider('http://geth:8545'))
+w3=Web3(HTTPProvider(os.environ.get('GETH_ADDR','http://geth:8545')))
 w3.middleware_stack.inject(geth_poa_middleware,layer=0)
-KEYFILE = 'keyfile'
-HOST = 'polyswarmd:31337'
-PASSWORD = 'password'
-ACCOUNT = '0x'+json.loads(open('keyfile','r').read())['address']
-ARTIFACT_DIRECTORY = './bounties/'
-POLYSWARMD_BOUNTY_ADDRESS='0xdE4E1Da8AcD61253948eE0dfa2377137a42240B8'
-POLYSWARMD_NECTAR_ADDRESS='0x21262bf29ff08691c8a72bc6f22f791996e1891f'
+
+KEYFILE = os.environ.get('KEYFILE','keyfile')
+HOST = os.environ.get('POLYSWARMD_ADDR','polyswarmd:31337')
+PASSWORD = os.environ.get('PASSWORD','password')
+ACCOUNT = '0x' + json.loads(open(KEYFILE,'r').read())['address']
+ARTIFACT_DIRECTORY = os.environ.get('ARTIFACT_DIRECTORY','./bounties/')
 print('using account ' + ACCOUNT + " ...")
-#web3.eth.enable_unaudited_features()
+
 
 # Description: File class to hold sufficient data for bounty creation
 # TODO: 
@@ -36,7 +34,7 @@ class Artifact:
                 self.uri = ''
                 self.bid = bid
 
-        # Description: POST currenty artifact and store uri
+        # Description: POST current artifact and store uri
         # Params: self object
         # return: uri string to access artifact
         def postArtifact(self):
@@ -103,12 +101,11 @@ class Artifact:
                 #sign transactions 
                 signed = []
                 key = web3.eth.account.decrypt(open(KEYFILE,'r').read(), PASSWORD)
-                cnt =0
+                cnt = 0
                 for tx in transactions:
                     cnt+=1
                     print ('tx:to= ' +tx['to'].upper())
                     print ('account: ' +ACCOUNT.upper()) 
-                    #print ((tx)['to'].upper()==ACCOUNT.upper())
                     print ('\n\n*****************************\n' + 'TRANSACTION RESPONSE\n')
                     print(tx)
                     print('******************************\n')
@@ -125,12 +122,10 @@ class Artifact:
 
 def jsonify(encoded):
         decoded = '';
-
         try:
                 decoded = encoded.json()
         except ValueError:
                 sys.exit("Error in jsonify: ", sys.exc_info()[0])
-
         return decoded
 
 
@@ -164,11 +159,9 @@ def postBounties(numToPost, files):
 
                 tempBounty = artifactArr[curArtifact]
                 #will need to change time to account for 
-                tempBounty.postBounty(5,nonce)
+                tempBounty.postBounty(25,nonce)
                 print('posted bounty with nonce '+ str(nonce))
                 nonce +=2
-                #buffer bounty posts
-                time.sleep(1)
                 bountyArr.append(tempBounty)
                 curArtifact+=1
         return bountyArr
@@ -176,8 +169,6 @@ def postBounties(numToPost, files):
 # Description: Retrieve files from directories to use as artifacts
 # Params:
 # return: array of file objects
-# TODO: Acquire true intent of malware files from nick/check file name against
-# database of true intent to easily settle verdicts when needed. 
 def getFiles():
         files = []
 
@@ -206,12 +197,7 @@ if __name__ == "__main__":
         print("\n\n******************************************************")
         print("CREATING "+ str(numBountiesToPost) +" BOUNTIES EVERY 10 SEC")
         print("********************************************************")
-        #cnt=0
-        #while (cnt<10):
         bountyList = postBounties(numBountiesToPost, fileList)
-        #cnt +=1
-        print("iteration complete,sleeping 10...")
-        sleep(5)
         print("\n\n********************************")
         print("FINISHED BOUNTY CREATION, EXITING AMBASSADOR")
         print("********************************\n\n")
