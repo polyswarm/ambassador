@@ -19,7 +19,7 @@ HOST = os.environ.get('POLYSWARMD_ADDR','polyswarmd:31337')
 PASSWORD = os.environ.get('PASSWORD','password')
 ACCOUNT = '0x' + json.loads(open(KEYFILE,'r').read())['address']
 ARTIFACT_DIRECTORY = os.environ.get('ARTIFACT_DIRECTORY','./bounties/')
-logging.debug('using account ' + ACCOUNT + " ...")
+logging.debug('using account ' + ACCOUNT + "...")
 
 
 # Description: File class to hold sufficient data for bounty creation
@@ -119,8 +119,10 @@ class Artifact:
                 logging.debug('***********************\nPOSTING SIGNED TXNs, count #= ' + str(cnt) + '\n***********************\n')
                 r = requests.post('http://polyswarmd:31337/transactions', json={'transactions': signed})
                 logging.debug(r.json())
-                        
-                logging.debug("Bounty "+self.file.name+" sent to polyswarmd. May not have been created unless response is [200] and you signed it successfully.")
+                if r.json()['status'] == 'OK':
+                	logging.info("Bounty "+self.file.name+" sent to polyswarmd.")
+                else:
+                	logging.warning("BOUNTY NOT POSTED!!!!!!!!!!! CHECK TX")
 
 def jsonify(encoded):
         decoded = '';
@@ -197,10 +199,11 @@ if __name__ == "__main__":
         if numBountiesToPost<10:
             logging.debug(os.listdir(ARTIFACT_DIRECTORY))
         logging.debug("\n\n******************************************************")
-        logging.debug("CREATING "+ str(numBountiesToPost) +" BOUNTIES EVERY 10 SEC")
+        logging.debug("CREATING "+ str(numBountiesToPost) + "BOUNTIES")
         logging.debug("********************************************************")
         bountyList = postBounties(numBountiesToPost, fileList)
         logging.debug("\n\n********************************")
         logging.debug("FINISHED BOUNTY CREATION, EXITING AMBASSADOR")
         logging.debug("********************************\n\n")
+        sys.exit(0)
 
