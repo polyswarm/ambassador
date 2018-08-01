@@ -19,6 +19,8 @@ HOST = os.environ.get('POLYSWARMD_ADDR','polyswarmd:31337')
 PASSWORD = os.environ.get('PASSWORD','password')
 ACCOUNT = '0x' + json.loads(open(KEYFILE,'r').read())['address']
 ARTIFACT_DIRECTORY = os.environ.get('ARTIFACT_DIRECTORY','./bounties/')
+BOUNTY_DURATION = os.environ.get('BOUNTY_DURATION',25)
+
 logging.debug('using account ' + ACCOUNT + "...")
 
 
@@ -120,9 +122,9 @@ class Artifact:
                 r = requests.post('http://polyswarmd:31337/transactions', json={'transactions': signed})
                 logging.debug(r.json())
                 if r.json()['status'] == 'OK':
-                	logging.info("Bounty "+self.file.name+" sent to polyswarmd.")
+                    logging.info("\n\nBounty "+self.file.name+" sent to polyswarmd.\n\n")
                 else:
-                	logging.warning("BOUNTY NOT POSTED!!!!!!!!!!! CHECK TX")
+                    logging.warning("BOUNTY NOT POSTED!!!!!!!!!!! CHECK TX")
 
 def jsonify(encoded):
         decoded = '';
@@ -163,7 +165,7 @@ def postBounties(numToPost, files):
 
                 tempBounty = artifactArr[curArtifact]
                 #will need to change time to account for 
-                tempBounty.postBounty(25,nonce)
+                tempBounty.postBounty(BOUNTY_DURATION,nonce)
                 logging.debug('posted bounty with nonce '+ str(nonce))
                 nonce +=2
                 bountyArr.append(tempBounty)
@@ -202,6 +204,7 @@ if __name__ == "__main__":
         logging.debug("CREATING "+ str(numBountiesToPost) + "BOUNTIES")
         logging.debug("********************************************************")
         bountyList = postBounties(numBountiesToPost, fileList)
+        logging.debug( str(bountyList) )
         logging.debug("\n\n********************************")
         logging.debug("FINISHED BOUNTY CREATION, EXITING AMBASSADOR")
         logging.debug("********************************\n\n")
