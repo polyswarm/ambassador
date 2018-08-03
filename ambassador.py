@@ -4,23 +4,25 @@ import json
 import sys
 import os
 import asyncio
-import threading
-from time import sleep
-import time
+import logging
+
 from web3.auto import w3 as web3
 from web3 import Web3,HTTPProvider
 from web3.middleware import geth_poa_middleware
-w3=Web3(HTTPProvider('http://geth:8545'))
+
+logging.basicConfig(level=logging.INFO)
+w3=Web3(HTTPProvider(os.environ.get('GETH_ADDR','http://geth:8545')))
 w3.middleware_stack.inject(geth_poa_middleware,layer=0)
-KEYFILE = 'keyfile'
-HOST = 'polyswarmd:31337'
-PASSWORD = 'password'
-ACCOUNT = '0x'+json.loads(open('keyfile','r').read())['address']
-ARTIFACT_DIRECTORY = './bounties/'
-POLYSWARMD_BOUNTY_ADDRESS='0xdE4E1Da8AcD61253948eE0dfa2377137a42240B8'
-POLYSWARMD_NECTAR_ADDRESS='0x21262bf29ff08691c8a72bc6f22f791996e1891f'
-print('using account ' + ACCOUNT + " ...")
-#web3.eth.enable_unaudited_features()
+
+KEYFILE = os.environ.get('KEYFILE','keyfile')
+HOST = os.environ.get('POLYSWARMD_ADDR','polyswarmd:31337')
+PASSWORD = os.environ.get('PASSWORD','password')
+ACCOUNT = '0x' + json.loads(open(KEYFILE,'r').read())['address']
+ARTIFACT_DIRECTORY = os.environ.get('ARTIFACT_DIRECTORY','./bounties/')
+BOUNTY_DURATION = os.environ.get('BOUNTY_DURATION',25)
+
+logging.debug('using account ' + ACCOUNT + "...")
+
 
 # Description: File class to hold sufficient data for bounty creation
 # TODO: 
@@ -36,12 +38,12 @@ class Artifact:
                 self.uri = ''
                 self.bid = bid
 
-        # Description: POST currenty artifact and store uri
+        # Description: POST current artifact and store uri
         # Params: self object
         # return: uri string to access artifact
         def postArtifact(self):
 
-                print("Attempting to post "+ self.file.name)
+                logging.debug("Attempting to post "+ self.file.name)
                 response = ''
 
                 params = (('account', ACCOUNT))
@@ -52,24 +54,24 @@ class Artifact:
                 try:
                         response = requests.post(url, files=file)
                 except:
-                        print("Error in artifact.postArtifact: ", sys.exc_info())
-                        print(self.file.name +" not posted")
+                        logging.debug("Error in artifact.postArtifact: ", sys.exc_info())
+                        logging.debug(self.file.name +" not posted")
                         sys.exit()
 
                 response = jsonify(response)
                 #check response is ok
                 if 'status' not in response or 'result' not in response:
-                                print('Missing key in response. Following error received:')
-                                print(response['message'])
+                                logging.debug('Missing key in response. Following error received:')
+                                logging.debug(response['message'])
                                 sys.exit()
 
 
                 if response['status'] is 'FAIL':
-                        print(response['message'])
+                        logging.debug(response['message'])
                         sys.exit()
 
                 #hold response URI
-                print("Posted to IPFS successfully \n")
+                logging.debug("Posted to IPFS successfully \n")
                 self.uri = response['result']
 
 	#Description: POST self as artifact
@@ -81,7 +83,7 @@ class Artifact:
                 headers = {'Content-Type': 'application/json'}
                 postnonce = ''
                 postnonce = str(basenonce)
-                print ('base nonce is ' + postnonce)
+                logging.debug('base nonce is ' + postnonce)
                 data = dict()
                 data['amount']=self.bid
                 data['uri']=self.uri
@@ -89,48 +91,47 @@ class Artifact:
                 
                 url = 'http://'+HOST+'/bounties?account='+ACCOUNT+'&base_nonce='+postnonce
                 response = ''
-                print('attempting to post bounty: ' + self.uri + ' to: ' + url + '\n*****************************')  
+                logging.debug('attempting to post bounty: ' + self.uri + ' to: ' + url + '\n*****************************')  
                 try:
                         response = requests.post(url, headers=headers, data=json.dumps(data))
                 except:
-                        print("Error in artifact.postBounty: ", sys.exc_info())
-                        print(self.file.name +" bounty not posted.")
+                        logging.debug("Error in artifact.postBounty: ", sys.exc_info())
+                        logging.debug(self.file.name +" bounty not posted.")
 
 
-                print(response)
+                logging.debug(response)
                 #parse result
                 transactions = response.json()['result']['transactions']
                 #sign transactions 
                 signed = []
                 key = web3.eth.account.decrypt(open(KEYFILE,'r').read(), PASSWORD)
-                cnt =0
+                cnt = 0
                 for tx in transactions:
                     cnt+=1
-                    print ('tx:to= ' +tx['to'].upper())
-                    print ('account: ' +ACCOUNT.upper()) 
-                    #print ((tx)['to'].upper()==ACCOUNT.upper())
-                    print ('\n\n*****************************\n' + 'TRANSACTION RESPONSE\n')
-                    print(tx)
-                    print('******************************\n')
+                    logging.debug('tx:to= ' +tx['to'].upper())
+                    logging.debug('account: ' +ACCOUNT.upper()) 
+                    logging.debug('\n\n*****************************\n' + 'TRANSACTION RESPONSE\n')
+                    logging.info(tx)
+                    logging.debug('******************************\n')
 
 
                     s = web3.eth.account.signTransaction(tx, key)
                     raw = bytes(s['rawTransaction']).hex()
                     signed.append(raw)
-                print('***********************\nPOSTING SIGNED TXNs, count #= ' + str(cnt) + '\n***********************\n')
+                logging.debug('***********************\nPOSTING SIGNED TXNs, count #= ' + str(cnt) + '\n***********************\n')
                 r = requests.post('http://polyswarmd:31337/transactions', json={'transactions': signed})
-                print(r.json())
-                        
-                print("Bounty "+self.file.name+" sent to polyswarmd. May not have been created unless response is [200] and you signed it successfully.")
+                logging.debug(r.json())
+                if r.json()['status'] == 'OK':
+                    logging.info("\n\nBounty "+self.file.name+" sent to polyswarmd.\n\n")
+                else:
+                    logging.warning("BOUNTY NOT POSTED!!!!!!!!!!! CHECK TX")
 
 def jsonify(encoded):
         decoded = '';
-
         try:
                 decoded = encoded.json()
         except ValueError:
                 sys.exit("Error in jsonify: ", sys.exc_info()[0])
-
         return decoded
 
 
@@ -141,9 +142,9 @@ def postBounties(numToPost, files):
         #hold all artifacts and bounties
         artifactArr = []
         bountyArr = [];
-        print ("trying to get nonce")
+        logging.debug("trying to get nonce")
         nonce=json.loads(requests.get('http://'+HOST + '/nonce?account='+ACCOUNT).text)['result']
-        print ("nonce received: "+str(nonce))
+        logging.debug("nonce received: "+str(nonce))
         #create and post artifacts 
         for i in range(0, numToPost):
                 #stop early if bounties to post is greater than the number of files
@@ -164,11 +165,9 @@ def postBounties(numToPost, files):
 
                 tempBounty = artifactArr[curArtifact]
                 #will need to change time to account for 
-                tempBounty.postBounty(5,nonce)
-                print('posted bounty with nonce '+ str(nonce))
+                tempBounty.postBounty(BOUNTY_DURATION,nonce)
+                logging.debug('posted bounty with nonce '+ str(nonce))
                 nonce +=2
-                #buffer bounty posts
-                time.sleep(1)
                 bountyArr.append(tempBounty)
                 curArtifact+=1
         return bountyArr
@@ -176,8 +175,6 @@ def postBounties(numToPost, files):
 # Description: Retrieve files from directories to use as artifacts
 # Params:
 # return: array of file objects
-# TODO: Acquire true intent of malware files from nick/check file name against
-# database of true intent to easily settle verdicts when needed. 
 def getFiles():
         files = []
 
@@ -197,22 +194,19 @@ if __name__ == "__main__":
                         numBountiesToPost = sys.argv[1]
 
 
-        print("\n\n********************************")
-        print("OBTAINING FILES")
-        print("********************************")
+        logging.debug("\n\n********************************")
+        logging.debug("OBTAINING FILES")
+        logging.debug("********************************")
         fileList = getFiles()
         if numBountiesToPost<10:
-            print(os.listdir(ARTIFACT_DIRECTORY))
-        print("\n\n******************************************************")
-        print("CREATING "+ str(numBountiesToPost) +" BOUNTIES EVERY 10 SEC")
-        print("********************************************************")
-        #cnt=0
-        #while (cnt<10):
+            logging.debug(os.listdir(ARTIFACT_DIRECTORY))
+        logging.debug("\n\n******************************************************")
+        logging.debug("CREATING "+ str(numBountiesToPost) + "BOUNTIES")
+        logging.debug("********************************************************")
         bountyList = postBounties(numBountiesToPost, fileList)
-        #cnt +=1
-        print("iteration complete,sleeping 10...")
-        sleep(5)
-        print("\n\n********************************")
-        print("FINISHED BOUNTY CREATION, EXITING AMBASSADOR")
-        print("********************************\n\n")
+        logging.debug( str(bountyList) )
+        logging.debug("\n\n********************************")
+        logging.debug("FINISHED BOUNTY CREATION, EXITING AMBASSADOR")
+        logging.debug("********************************\n\n")
+        sys.exit(0)
 
