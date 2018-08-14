@@ -1,5 +1,5 @@
-#! /usr/bin/env python
-import requests
+import aiohttp
+import asyncio
 import json
 import sys
 import os
@@ -7,206 +7,189 @@ import asyncio
 import logging
 
 from web3.auto import w3 as web3
-from web3 import Web3,HTTPProvider
-from web3.middleware import geth_poa_middleware
 
 logging.basicConfig(level=logging.INFO)
-w3=Web3(HTTPProvider(os.environ.get('GETH_ADDR','http://geth:8545')))
-w3.middleware_stack.inject(geth_poa_middleware,layer=0)
 
-KEYFILE = os.environ.get('KEYFILE','keyfile')
-HOST = os.environ.get('POLYSWARMD_ADDR','polyswarmd:31337')
-PASSWORD = os.environ.get('PASSWORD','password')
-ACCOUNT = '0x' + json.loads(open(KEYFILE,'r').read())['address']
-ARTIFACT_DIRECTORY = os.environ.get('ARTIFACT_DIRECTORY','./bounties/')
-BOUNTY_DURATION = os.environ.get('BOUNTY_DURATION',25)
+KEYFILE = os.environ.get('KEYFILE', 'keyfile')
+POLYSWARMD_ADDR = os.environ.get('POLYSWARMD_ADDR', 'polyswarmd:31337')
+PASSWORD = os.environ.get('PASSWORD', 'password')
+ARTIFACT_DIRECTORY = os.environ.get('ARTIFACT_DIRECTORY', './bounties/')
+MINIMUM_AMOUNT = 62500000000000000
+BOUNTY_DURATION = os.environ.get('BOUNTY_DURATION', 25)
 
-logging.debug('using account ' + ACCOUNT + "...")
+def check_response(response):
+    """Check the status of responses from polyswarmd
 
-
-# Description: File class to hold sufficient data for bounty creation
-# TODO: 
-class File:
-        def __init__(self, name, path):
-                self.name = name
-                self.path = path+name
-
-class Artifact:
-        def __init__(self, file, bid):
-                #file object
-                self.file = file
-                self.uri = ''
-                self.bid = bid
-
-        # Description: POST current artifact and store uri
-        # Params: self object
-        # return: uri string to access artifact
-        def postArtifact(self):
-
-                logging.debug("Attempting to post "+ self.file.name)
-                response = ''
-
-                params = (('account', ACCOUNT))
-                file = {'file': (self.file.name, open(self.file.path, 'rb'))}
-                url = 'http://'+HOST+'/artifacts'
-
-                #send post to polyswarmd
-                try:
-                        response = requests.post(url, files=file)
-                except:
-                        logging.debug("Error in artifact.postArtifact: ", sys.exc_info())
-                        logging.debug(self.file.name +" not posted")
-                        sys.exit()
-
-                response = jsonify(response)
-                #check response is ok
-                if 'status' not in response or 'result' not in response:
-                                logging.debug('Missing key in response. Following error received:')
-                                logging.debug(response['message'])
-                                sys.exit()
+    Args:
+        response: Response dict parsed from JSON from polyswarmd
+    Returns:
+        (bool): True if successful else False
+    """
+    return response['status'] == 'OK'
 
 
-                if response['status'] is 'FAIL':
-                        logging.debug(response['message'])
-                        sys.exit()
+def is_valid_ipfs_hash(ipfs_hash):
+    """Check if a string represents a valid IPFS multihash
 
-                #hold response URI
-                logging.debug("Posted to IPFS successfully \n")
-                self.uri = response['result']
+    Args:
+        ipfs_hash (str): String to check
+    Returns:
+        (bool): True if valid IPFS multihash value else False
+    """
+    # TODO: Further multihash validation
+    try:
+        return len(ipfs_hash) < 100 and base58.b58decode(ipfs_hash)
+    except:
+        pass
 
-	#Description: POST self as artifact
-        # Params:       Duration - how long to keep bounty active for test
-        #                       Amount - 
-        # return: artifact file contents
-        def postBounty(self, duration,basenonce):
-                #create data for post
-                headers = {'Content-Type': 'application/json'}
-                postnonce = ''
-                postnonce = str(basenonce)
-                logging.debug('base nonce is ' + postnonce)
-                data = dict()
-                data['amount']=self.bid
-                data['uri']=self.uri
-                data['duration']=duration
-                
-                url = 'http://'+HOST+'/bounties?account='+ACCOUNT+'&base_nonce='+postnonce
-                response = ''
-                logging.debug('attempting to post bounty: ' + self.uri + ' to: ' + url + '\n*****************************')  
-                try:
-                        response = requests.post(url, headers=headers, data=json.dumps(data))
-                except:
-                        logging.debug("Error in artifact.postBounty: ", sys.exc_info())
-                        logging.debug(self.file.name +" bounty not posted.")
+    return False
 
 
-                logging.debug(response)
-                #parse result
-                transactions = response.json()['result']['transactions']
-                #sign transactions 
-                signed = []
-                key = web3.eth.account.decrypt(open(KEYFILE,'r').read(), PASSWORD)
-                cnt = 0
-                for tx in transactions:
-                    cnt+=1
-                    logging.debug('tx:to= ' +tx['to'].upper())
-                    logging.debug('account: ' +ACCOUNT.upper()) 
-                    logging.debug('\n\n*****************************\n' + 'TRANSACTION RESPONSE\n')
-                    logging.info(tx)
-                    logging.debug('******************************\n')
+class Ambassador(object):
+    """Example ambassador, interacts with polyswarmd to post bounties"""
+
+    def __init__(self,
+                 polyswarmd_addr,
+                 keyfile,
+                 password,
+                 artifact_directory,
+                 cert=None,
+                 cert_password=None):
+        """Initialize an ambassador
+
+        Args:
+            polyswarmd_addr (str): Address of polyswarmd
+            keyfile (str): Path to private key file to use to sign transactions
+            password (str): Password to decrypt the encrypted private key
+            artifact_directory (str): Path of directory containing artifacts
+            cert (str): Optional PEM file containing client TLS certificate
+            cert_password (str): Optional password with which to decrypt the client TLS certificate
+        """
+        self.polyswarmd_addr = polyswarmd_addr
+
+        with open(keyfile, 'r') as f:
+            self.priv_key = web3.eth.account.decrypt(f.read(), password)
+
+        self.address = web3.eth.account.privateKeyToAccount(
+            self.priv_key).address
+        logging.info('Using account: %s', self.address)
+
+        self.files = os.listdir(artifact_directory)
+
+        self.cert = cert
+        self.cert_password = cert_password
+
+    def run(self, n=2):
+        """Posts a number of bounties equal to or less than num files we have
+
+        Args:
+            n (int): Number of bounties to post
+        """
+
+        n = min(n, len(self.files))
+
+        async with aiohttp.ClientSession() as session:
+            for i in range(n):
+                uri = await self.__post_artifact(session, self.files[i])
+                if not uri:
+                    logging.error('Error uploading artifact: %s', self.files[i])
+
+                bounties = await self.__post_bounty(session, uri, MINIMUM_AMOUNT, BOUNTY_DURATION)
+                logging.info('Posted bounties: %s', bounties)
+
+    async def __post_artifact(self, session, path, name=None):
+       """Post an artifact from path and return IPFS hash
+
+        Args:
+            session (aiohttp.ClientSession): Client session
+            path (str): Path to a file
+            name (str): Optional artifact name, if ommitted os.path.basename(path)
+
+        Returns:
+            (str): IPFS hash referring to artifact
+        """
+        if name is None:
+            name = os.path.basename(path)
+
+        protocol = 'http' if not self.cert else 'https'
+        uri = '{0}://{1}/artifacts/'.format(protocol, self.polyswarmd_addr)
+        data = aiohttp.FormData()
+        data.add_field('file',
+                open(path, 'rb'),
+                filename=name,
+                content_type='application/octet-stream')
+        async with session.post(uri, data=data) as response:
+            j = await response.json()
+            return j.get('result')
 
 
-                    s = web3.eth.account.signTransaction(tx, key)
-                    raw = bytes(s['rawTransaction']).hex()
-                    signed.append(raw)
-                logging.debug('***********************\nPOSTING SIGNED TXNs, count #= ' + str(cnt) + '\n***********************\n')
-                r = requests.post('http://polyswarmd:31337/transactions', json={'transactions': signed})
-                logging.debug(r.json())
-                if r.json()['status'] == 'OK':
-                    logging.info("\n\nBounty "+self.file.name+" sent to polyswarmd.\n\n")
-                else:
-                    logging.warning("BOUNTY NOT POSTED!!!!!!!!!!! CHECK TX")
+    async def __post_transactions(self, session, transactions):
+        """Post a set of (signed) transactions to Ethereum via polyswarmd, parsing the emitted events
 
-def jsonify(encoded):
-        decoded = '';
+        Args:
+            session (aiohttp.ClientSession): Client sesssion
+            transactions (List[Transaction]): The transactions to sign and post
+        Returns:
+            Response JSON parsed from polyswarmd containing emitted events
+        """
+        signed = []
+        for tx in transactions:
+            s = web3.eth.account.signTransaction(tx, self.priv_key)
+            raw = bytes(s['rawTransaction']).hex()
+            signed.append(raw)
+
+        protocol = 'http' if not self.cert else 'https'
+        uri = '{0}://{1}/transactions'.format(protocol, self.polyswarmd_addr)
+
+        async with session.post(
+                uri, json={'transactions': signed}) as response:
+            j = await response.json()
+            if self.testing >= 0 and 'errors' in j.get('result', {}):
+                logging.error('Received transaction error in testing mode: %s',
+                              j)
+                sys.exit(1)
+
+            return j
+
+
+    async def __post_bounty(self, session, uri, amount, duration):
+        """Post a bounty to polyswarmd
+
+        Args:
+            session (aiohttp.ClientSession): Client sesssion
+            uri (str): URI of the bounty
+            amount (int): Amount of the bounty
+            duration (int): Duration of the bounty
+        Returns:
+            Response JSON parsed from polyswarmd containing emitted events
+        """
+        protocol = 'http' if not self.cert else 'https'
+        uri = '{0}://{1}/bounties?account={3}'.format(protocol, self.polyswarmd_addr, self.address)
+        bounty = {
+            'amount': str(amount),
+            'uri': uri,
+            'duration': duration,
+        }
+
+        async with session.post(uri, json=bounty) as response:
+            response = await response.json()
+
+        if not check_response(response):
+            return []
+
+        response = await self.__post_transactions(
+            session, response['result']['transactions'])
+
+        if not check_response(response):
+            return []
+
         try:
-                decoded = encoded.json()
-        except ValueError:
-                sys.exit("Error in jsonify: ", sys.exc_info()[0])
-        return decoded
+            return response['result']['bounties']
+        except:
+            logging.warning('expected bounty, got: %s', response)
+            return []
 
 
-# Description: Posts # of bounties equal to or less than num files we have
-# Params: # to post 
-# return: array of bounty objects
-def postBounties(numToPost, files):
-        #hold all artifacts and bounties
-        artifactArr = []
-        bountyArr = [];
-        logging.debug("trying to get nonce")
-        nonce=json.loads(requests.get('http://'+HOST + '/nonce?account='+ACCOUNT).text)['result']
-        logging.debug("nonce received: "+str(nonce))
-        #create and post artifacts 
-        for i in range(0, numToPost):
-                #stop early if bounties to post is greater than the number of files
-                if numToPost > len(files):
-                        break;
-                tempArtifact = Artifact(files[i], '625000000000000000')
-                tempArtifact.postArtifact()
-                artifactArr.append(tempArtifact)
-
-        #post bounties
-        #artifactList iterator
-        numArtifacts = len(artifactArr)
-        curArtifact = 0
-        for i in range(0, numToPost):
-                #loop over artifacts when creating many bounties
-                if curArtifact > numArtifacts:
-                        curArtifact = 0
-
-                tempBounty = artifactArr[curArtifact]
-                #will need to change time to account for 
-                tempBounty.postBounty(BOUNTY_DURATION,nonce)
-                logging.debug('posted bounty with nonce '+ str(nonce))
-                nonce +=2
-                bountyArr.append(tempBounty)
-                curArtifact+=1
-        return bountyArr
-
-# Description: Retrieve files from directories to use as artifacts
-# Params:
-# return: array of file objects
-def getFiles():
-        files = []
-
-        for file in os.listdir(ARTIFACT_DIRECTORY):
-                tmp = File(file, ARTIFACT_DIRECTORY)
-                files.append(tmp)
-
-        return files
 if __name__ == "__main__":
-
-        #default bounties to post
-        numBountiesToPost = 2
-
-        #if an int is used in cmd arg then use that as # bounties to post
-        if (len(sys.argv) is 2):
-                if isinstance(sys.argv[1], int):
-                        numBountiesToPost = sys.argv[1]
-
-
-        logging.debug("\n\n********************************")
-        logging.debug("OBTAINING FILES")
-        logging.debug("********************************")
-        fileList = getFiles()
-        if numBountiesToPost<10:
-            logging.debug(os.listdir(ARTIFACT_DIRECTORY))
-        logging.debug("\n\n******************************************************")
-        logging.debug("CREATING "+ str(numBountiesToPost) + "BOUNTIES")
-        logging.debug("********************************************************")
-        bountyList = postBounties(numBountiesToPost, fileList)
-        logging.debug( str(bountyList) )
-        logging.debug("\n\n********************************")
-        logging.debug("FINISHED BOUNTY CREATION, EXITING AMBASSADOR")
-        logging.debug("********************************\n\n")
-        sys.exit(0)
-
+    ambassador = Ambassador(POLYSWARMD_ADDDR, KEYFILE, PASSWORD, ARTIFACT_DIRECTORY)
+    ambassador.run()

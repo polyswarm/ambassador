@@ -1,2 +1,5 @@
 *.swp
-__pyc*
+*.pyc
+venv/
+__pycache__/
+.idea
