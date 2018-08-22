@@ -15,7 +15,7 @@ w3=Web3(HTTPProvider(os.environ.get('GETH_ADDR','http://geth:8545')))
 w3.middleware_stack.inject(geth_poa_middleware,layer=0)
 
 KEYFILE = os.environ.get('KEYFILE','keyfile')
-HOST = os.environ.get('POLYSWARMD_ADDR','polyswarmd:31337')
+HOST = os.environ.get('POLYSWARMD_HOST','polyswarmd:31337')
 PASSWORD = os.environ.get('PASSWORD','password')
 API_KEY = os.environ.get('API_KEY', '')
 ACCOUNT = '0x' + json.loads(open(KEYFILE,'r').read())['address']
