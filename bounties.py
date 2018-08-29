@@ -11,6 +11,7 @@ from web3 import Web3,HTTPProvider
 from web3.middleware import geth_poa_middleware
 from artifacts import File, Artifact
 
+
 logging.basicConfig(level=logging.DEBUG)
 w3=Web3(HTTPProvider(os.environ.get('GETH_ADDR','http://geth:8545')))
 w3.middleware_stack.inject(geth_poa_middleware,layer=0)
@@ -82,7 +83,6 @@ def run_test(polyswarmd_addr, keyfile, password, bounty_directory, bid, duration
     logging.debug("\n\n********************************")
     logging.debug("FINISHED BOUNTY CREATION, EXITING AMBASSADOR")
     logging.debug("********************************\n\n")
-    sys.exit(0)
 
 if __name__ == "__main__":
     run_test()

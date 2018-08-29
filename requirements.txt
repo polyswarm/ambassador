@@ -2,3 +2,8 @@ requests==2.19.1
 websockets==5.0.1
 web3==4.4.1
 click==6.7
+aiohttp==2.3.1
+base58==0.2.5
+aiodns==1.1.1
+web3==4.4.1
+eth-account==0.2.3

@@ -14,7 +14,6 @@ import os
 import uuid
 from uuid import UUID
 import logging
-from websocket import create_connection
 
 from time import sleep
 from eth_account.messages import defunct_hash_message
@@ -22,33 +21,28 @@ from web3 import Web3,HTTPProvider
 from web3.middleware import geth_poa_middleware
 from artifacts import File, Artifact
 from queue import Queue
+
+import click
+import logging
+import sys
+
 logging.basicConfig(level=logging.INFO)
 
 ARTIFACT_DIRECTORY = os.environ.get('ARTIFACT_DIRECTORY','./bounties/')
 KEYFILE = os.environ.get('KEYFILE','keyfile')
-HOST = os.environ.get('POLYSWARMD_ADDR','localhost:31337')
+HOST = os.environ.get('POLYSWARMD_ADDR','polyswarmd:31337')
 PASSWORD = os.environ.get('PASSWORD','password')
 ACCOUNT = '0x' + json.loads(open(KEYFILE,'r').read())['address']
 logging.debug('using account ' + ACCOUNT + "...")
+API_KEY = os.environ.get('API_KEY', '')
+headers = { 'Authorization': API_KEY }
+EXPERT= os.environ.get('OFFER_EXPERT', '0x05328f171b8c1463eafdacca478d9ee6a1d923f8')
 
-EXPERT='0x05328f171b8c1463eafdacca478d9ee6a1d923f8'
-
-HOST = os.environ.get('POLYSWARMD_ADDR','localhost:31337')
+HOST = os.environ.get('POLYSWARMD_ADDR','polyswarmd:31337')
 priv_key = web3.eth.account.decrypt(open(KEYFILE,'r').read(), PASSWORD)
 
 class OfferChannel(object):
-    """An assertion which has yet to be publically revealed"""
-
     def __init__(self, guid, offer_amount, ambassador_balance, expert_balance, offer_directory = None):
-        """Initialize a secret assertion
-
-        Args:
-            guid (str): GUID of the bounty being asserted on
-            index (int): Index of the assertion to reveal
-            nonce (str): Secret nonce used to reveal assertion
-            verdicts (List[bool]): List of verdicts for each artifact in the bounty
-            metadata (str): Optional metadata
-        """
         self.guid = guid
         self.offer_amount = offer_amount
         self.ambassador_balance = ambassador_balance
@@ -83,7 +77,6 @@ async def post_transactions(session, transactions):
     """Post a set of (signed) transactions to Ethereum via polyswarmd, parsing the emitted events
 
     Args:
-        microengine (Microengine): The microengine instance
         session (aiohttp.ClientSession): Client sesssion
         transactions (List[Transaction]): The transactions to sign and post
     Returns:
@@ -107,34 +100,16 @@ async def generate_state(session, **kwargs):
         return (await response.json())['result']['state']
 
 async def init_offer(session):
-    """Post a set of (signed) tran sactions to Ethereum via polyswarmd, parsing the emitted events
-
-    Args:
-        microengine (Microengine): The microengine instance
-        session (aiohttp.ClientSession): Client sesssion
-        transactions (List[Transaction]): The transactions to sign and post
-    Returns:
-        Response JSON parsed from polyswarmd containing emitted events
-    """
     async with session.post('http://' + HOST + '/offers?account=' + ACCOUNT, json={'ambassador': ACCOUNT, 'expert': EXPERT, 'settlementPeriodLength': 100}) as response:
         response = await response.json()
 
     transactions = response['result']['transactions']
+
     offer_info = (await post_transactions(session, transactions))['result']['offers_initialized'][0] # TODO this array is weird - should be a dict
 
     return offer_info
 
 async def open_offer(session, guid, signiture):
-    """Post a set of (signed) transactions to Ethereum via polyswarmd, parsing the emitted events
-
-    Args:
-        microengine (Microengine): The microengine instance
-        session (aiohttp.ClientSession): Client sesssion
-        transactions (List[Transaction]): The transactions to sign and post
-    Returns:
-        Response JSON parsed from polyswarmd containing emitted events
-    """
-
     async with session.post('http://' + HOST + '/offers/' + guid + '/open?account=' + ACCOUNT, json=signiture) as response:
         response = await response.json()
 
@@ -145,30 +120,11 @@ async def open_offer(session, guid, signiture):
     return ret
 
 
-async def run_sockets(testing, offers, loop = False):
-    """Run this microengine
+async def run_sockets(testing, loop = False):
 
-    Args:
-        testing (int): Mode to process N bounties then exit (optional)
-    """
-    testing = testing
-    offers = offers
-    # asyncio.ensure_future(listen_for_offers(loop)),
-    tasks = [create_and_open_offer(loop)]
-
-
-    # if offers:
-    #     tasks.append(asyncio.ensure_future(listen_for_offers(loop)))
+    tasks = [create_and_open_offer(loop, testing)]
 
     await asyncio.gather(*tasks)
-
-def run(testing=-1, offers=True):
-
-    loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(run_sockets(testing, offers, loop))
-    finally:
-        loop.close()
 
 async def send_offer(session, ws, offer_channel, current_state):
 
@@ -242,11 +198,15 @@ async def accept_state(session, ws, offer_channel, current_state):
     # checkout that the offer amount is the same
     # check that the balances are correct
 
+    # TODO: Check signiture came from right participant
+
     if current_state['state']['nonce'] == offer_channel.nonce + 1 and offer_channel.ambassador_balance == current_state['state']['ambassador_balance'] + offer_channel.offer_amount and offer_channel.expert_balance == current_state['state']['expert_balance'] - offer_channel.offer_amount and current_state['state']['guid'] == offer_channel.guid.int and 'verdicts' in current_state['state']:
         offer_channel.nonce += 1
+        offer_channel.ambassador_balance = current_state['state']['ambassador_balance']
+        offer_channel.expert_balance = current_state['state']['expert_balance']
 
         sig = sign_state(current_state['raw_state'], priv_key)
-        sig['type'] = 'accept'
+        sig['type'] = 'payout'
         await ws.send(
             json.dumps(sig)
         )
@@ -255,11 +215,41 @@ async def accept_state(session, ws, offer_channel, current_state):
         return False
 
 
-async def listen_for_messages(offer_channel, init_message = None):
+async def create_and_open_offer(loop, testing):
+    async with aiohttp.ClientSession(headers=headers) as session:
+        offer_info = await init_offer(session)
+        offer_amount = 1
+        ambassador_balance = 30
+        expert_balance = 0
+        nonce = 0
+
+        # TODO polyswarmd should be sending over the string version of ids
+        guid = UUID(int=offer_info['guid'], version=4)
+        msig = offer_info['msig']
+        state = await generate_state(session, close_flag=1, nonce=nonce, ambassador=ACCOUNT, expert=EXPERT, msig_address=msig, ambassador_balance=ambassador_balance, expert_balance=expert_balance, guid=str(guid.int), offer_amount=1)
+        sig = sign_state(state, priv_key)
+        open_message = await open_offer(session, str(guid), sig)
+        sig['type'] = 'open'
+        offer_channel = OfferChannel(guid, offer_amount, ambassador_balance, expert_balance, ARTIFACT_DIRECTORY)
+        tasks = [listen_for_messages(offer_channel, testing, sig), listen_for_offer_events(offer_channel)]
+
+        await asyncio.gather(*tasks)
+
+def sign_state(state, private_key):
+    def to_32byte_hex(val):
+       return web3.toHex(web3.toBytes(val).rjust(32, b'\0'))
+
+    state_hash = to_32byte_hex(web3.sha3(hexstr=state))
+    state_hash = defunct_hash_message(hexstr=state_hash)
+    sig = web3.eth.account.signHash((state_hash), private_key=private_key)
+
+    return {'r':web3.toHex(sig.r), 'v':sig.v, 's':web3.toHex(sig.s), 'state': state}
+
+async def listen_for_messages(offer_channel, testing=False, init_message = None):
     uri = 'ws://{0}/messages/{1}'.format(HOST, offer_channel.guid)
-    async with aiohttp.ClientSession() as session:
-        async with websockets.connect(uri) as ws:
-            # send open message
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with websockets.connect(uri, extra_headers=headers) as ws:
+            # send open message on init
             if init_message != None:
                 await ws.send(
                     json.dumps(init_message)
@@ -271,6 +261,10 @@ async def listen_for_messages(offer_channel, init_message = None):
                     pass
                 elif msg['type'] == 'accept':
                     accepted = await accept_state(session, ws, offer_channel, msg)
+
+                    if accepted and testing:
+                        await close_channel(session, ws, offer_channel, offer_channel.last_message)
+                        sys.exit(0)
 
                     if accepted:
                         offer_channel.set_state(msg)
@@ -287,42 +281,17 @@ async def listen_for_messages(offer_channel, init_message = None):
                 elif msg['type'] == 'close':
                     await close_channel(session, ws, offer_channel, msg)
 
-async def create_and_open_offer(loop):
-    async with aiohttp.ClientSession() as session:
-        offer_info = await init_offer(session)
-        offer_amount = 1
-        # TODO polyswarmd should be sending over the string version of ids
-        guid = UUID(int=offer_info['guid'], version=4)
-        msig = offer_info['msig']
-        state = await generate_state(session, close_flag=1, nonce=0, ambassador=ACCOUNT, expert=EXPERT, msig_address=msig, ambassador_balance=30, expert_balance=0, guid=str(guid.int), offer_amount=1)
-        sig = sign_state(state, priv_key)
-        open_message = await open_offer(session, str(guid), sig)
-        sig['type'] = 'open'
-        offer_channel = OfferChannel(guid, offer_amount, 30, 0, ARTIFACT_DIRECTORY)
-        tasks = [listen_for_messages(offer_channel, sig), listen_for_offer_events(offer_channel)]
-
-        await asyncio.gather(*tasks)
-
-def sign_state(state, private_key):
-    def to_32byte_hex(val):
-       return web3.toHex(web3.toBytes(val).rjust(32, b'\0'))
-
-    state_hash = to_32byte_hex(web3.sha3(hexstr=state))
-    state_hash = defunct_hash_message(hexstr=state_hash)
-    sig = web3.eth.account.signHash((state_hash), private_key=private_key)
-
-    return {'r':web3.toHex(sig.r), 'v':sig.v, 's':web3.toHex(sig.s), 'state': state}
 
 async def listen_for_offer_events(offer_channel):
     uri = 'ws://{0}/events/{1}'.format(HOST, offer_channel.guid)
     try:
-        async with aiohttp.ClientSession() as session:
-            async with websockets.connect(uri) as ws:
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with websockets.connect(uri, extra_headers=headers) as ws:
                 while not ws.closed:
                     event = json.loads(await ws.recv())
 
                     if event['event'] == 'closed_agreement':
-                        # TODO: Close websockets?
+                        ws.close()
                         pass
                     elif event['event'] == 'settle_started':
                         nonce = int(event['data']['nonce'])
@@ -336,8 +305,23 @@ async def listen_for_offer_events(offer_channel):
         raise e
     else:
         pass
-        
-if __name__ == "__main__":
-        # TODO: Create cli option to select offers or bounties        
-        run()
 
+
+@click.command()
+@click.option('--testing', default=False,
+        help='Activate testing mode for integration testing, respond to 2 offers then exit')
+
+def run(testing=False):
+
+    # will create an offer, wait for it to be joined, and send all the offers in ARTIFACT_DIRECTORY to the OFFER_EXPERT
+    # when testing is true the script exits with 0 and closes the offer after receiving two offers
+
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(run_sockets(testing, loop))
+    finally:
+        loop.close()
+
+
+if __name__ ==  '__main__':
+    run()
