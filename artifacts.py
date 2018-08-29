@@ -43,7 +43,7 @@ class Artifact:
                         logging.debug(self.file.name +" not posted")
                         sys.exit()
 
-                response = (response.json())
+                response = response.json()
                 #check response is ok
                 if 'status' not in response or 'result' not in response:
                                 logging.debug('Missing key in response. Following error received:')
@@ -61,7 +61,7 @@ class Artifact:
 
         #Description: POST self as artifact
         # Params:       Duration - how long to keep bounty active for test
-        #                       Amount - 
+        #                       Amount -
         # return: artifact file contents
         def postBounty(self, duration, keyfile = KEYFILE, password = '', account=ACCOUNT):
                 #create data for post
@@ -71,7 +71,7 @@ class Artifact:
                 data['amount']=str(self.bid)
                 data['uri']=self.uri
                 data['duration']=duration
-                
+
                 url = 'http://'+self.polyswarmd_host+'/bounties'
 
                 try:
