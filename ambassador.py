@@ -15,8 +15,9 @@ w3=Web3(HTTPProvider(os.environ.get('GETH_ADDR','http://geth:8545')))
 w3.middleware_stack.inject(geth_poa_middleware,layer=0)
 
 KEYFILE = os.environ.get('KEYFILE','keyfile')
-HOST = os.environ.get('POLYSWARMD_ADDR','polyswarmd:31337')
+HOST = os.environ.get('POLYSWARMD_HOST','polyswarmd:31337')
 PASSWORD = os.environ.get('PASSWORD','password')
+API_KEY = os.environ.get('API_KEY', '')
 ACCOUNT = '0x' + json.loads(open(KEYFILE,'r').read())['address']
 ARTIFACT_DIRECTORY = os.environ.get('ARTIFACT_DIRECTORY','./bounties/')
 BOUNTY_DURATION = os.environ.get('BOUNTY_DURATION',25)
@@ -46,13 +47,13 @@ class Artifact:
                 logging.debug("Attempting to post "+ self.file.name)
                 response = ''
 
-                params = (('account', ACCOUNT))
-                file = {'file': (self.file.name, open(self.file.path, 'rb'))}
                 url = 'http://'+HOST+'/artifacts'
+                headers = {'Authorization': API_KEY}
+                file = {'file': (self.file.name, open(self.file.path, 'rb'))}
 
                 #send post to polyswarmd
                 try:
-                        response = requests.post(url, files=file)
+                        response = requests.post(url, headers=headers, files=file)
                 except:
                         logging.debug("Error in artifact.postArtifact: ", sys.exc_info())
                         logging.debug(self.file.name +" not posted")
@@ -80,7 +81,7 @@ class Artifact:
         # return: artifact file contents
         def postBounty(self, duration,basenonce):
                 #create data for post
-                headers = {'Content-Type': 'application/json'}
+                headers = {'Authorization': API_KEY, 'Content-Type': 'application/json'}
                 postnonce = ''
                 postnonce = str(basenonce)
                 logging.debug('base nonce is ' + postnonce)
@@ -89,7 +90,7 @@ class Artifact:
                 data['uri']=self.uri
                 data['duration']=duration
                 
-                url = 'http://'+HOST+'/bounties?account='+ACCOUNT+'&base_nonce='+postnonce
+                url = 'http://'+HOST+'/bounties?base_nonce='+postnonce
                 response = ''
                 logging.debug('attempting to post bounty: ' + self.uri + ' to: ' + url + '\n*****************************')  
                 try:
@@ -119,7 +120,7 @@ class Artifact:
                     raw = bytes(s['rawTransaction']).hex()
                     signed.append(raw)
                 logging.debug('***********************\nPOSTING SIGNED TXNs, count #= ' + str(cnt) + '\n***********************\n')
-                r = requests.post('http://polyswarmd:31337/transactions', json={'transactions': signed})
+                r = requests.post('http://polyswarmd:31337/transactions', headers=headers, json={'transactions': signed})
                 logging.debug(r.json())
                 if r.json()['status'] == 'OK':
                     logging.info("\n\nBounty "+self.file.name+" sent to polyswarmd.\n\n")
@@ -143,7 +144,8 @@ def postBounties(numToPost, files):
         artifactArr = []
         bountyArr = [];
         logging.debug("trying to get nonce")
-        nonce=json.loads(requests.get('http://'+HOST + '/nonce?account='+ACCOUNT).text)['result']
+        headers = {'Authorization': API_KEY}
+        nonce=json.loads(requests.get('http://'+HOST + '/nonce', headers=headers).text)['result']
         logging.debug("nonce received: "+str(nonce))
         #create and post artifacts 
         for i in range(0, numToPost):
