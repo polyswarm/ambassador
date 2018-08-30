@@ -14,6 +14,6 @@ echo "ambassador API key: ${API_KEY}"
 
 for i in `seq 1 10`
 do
-	python ambassador.py --testing True --password password
+	python ambassador.py
 done
 

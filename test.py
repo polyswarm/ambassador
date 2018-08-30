@@ -15,35 +15,26 @@ logging.basicConfig(level=logging.DEBUG)
 w3=Web3(HTTPProvider(os.environ.get('GETH_ADDR','http://geth:8545')))
 w3.middleware_stack.inject(geth_poa_middleware,layer=0)
 
-KEYFILE = os.environ.get('KEYFILE','keyfile')
-HOST = os.environ.get('POLYSWARMD_HOST','polyswarmd:31337')
-PASSWORD = os.environ.get('PASSWORD','password')
-API_KEY = os.environ.get('API_KEY', '95911a507379061cd32218ea0e511408')
-ACCOUNT = '0x' + json.loads(open(KEYFILE,'r').read())['address']
-ARTIFACT_DIRECTORY = os.environ.get('ARTIFACT_DIRECTORY','./bounties/')
-BOUNTY_DURATION = os.environ.get('BOUNTY_DURATION',25)
-
-logging.debug('using account ' + ACCOUNT + "...")
-
 
 # Description: Posts # of bounties equal to or less than num files we have
 # Params: # to post 
 # return: array of bounty objects
-def postBounties(numToPost, files):
+def postBounties(numToPost, files, host, keyfile, password, bid, duration, api_key, account):
         #hold all artifacts and bounties
         artifactArr = []
-        bountyArr = [];
+        bountyArr = []
+        
         logging.debug("trying to get nonce")
-        headers = {'Authorization': API_KEY}
+        headers = {'Authorization': api_key}
 
-        nonce=json.loads(requests.get('http://'+HOST + '/nonce', headers=headers).text)['result']
+        nonce=json.loads(requests.get('http://'+ host + '/nonce', headers=headers).text)['result']
         logging.debug("nonce received: "+str(nonce))
         #create and post artifacts 
         for i in range(0, numToPost):
                 #stop early if bounties to post is greater than the number of files
                 if numToPost > len(files):
                         break;
-                tempArtifact = Artifact(files[i], '625000000000000000', HOST, API_KEY)
+                tempArtifact = Artifact(files[i], bid, host, api_key)
                 tempArtifact.postArtifact()
                 artifactArr.append(tempArtifact)
 
@@ -57,7 +48,7 @@ def postBounties(numToPost, files):
                         curArtifact = 0
 
                 tempBounty = artifactArr[curArtifact]
-                tempBounty.postBounty(BOUNTY_DURATION, KEYFILE, PASSWORD, ACCOUNT)
+                tempBounty.postBounty(duration, keyfile, password, account)
                 logging.debug('posted bounty with nonce '+ str(nonce))
                 bountyArr.append(tempBounty)
                 curArtifact+=1
@@ -66,35 +57,27 @@ def postBounties(numToPost, files):
 # Description: Retrieve files from directories to use as artifacts
 # Params:
 # return: array of file objects
-def getFiles():
+def getFiles(directory):
         files = []
 
-        for file in os.listdir(ARTIFACT_DIRECTORY):
-                tmp = File(file, ARTIFACT_DIRECTORY)
+        for file in os.listdir(directory):
+                tmp = File(file, directory)
                 files.append(tmp)
 
         return files
 
-def run_test():
+def run_test(polyswarmd_addr, keyfile, password, bounty_directory, bid, duration, api_key, account):
     #default bounties to post
-    numBountiesToPost = 2
-
-    #if an int is used in cmd arg then use that as # bounties to post
-    if (len(sys.argv) is 2):
-            if isinstance(sys.argv[1], int):
-                    numBountiesToPost = sys.argv[1]
-
 
     logging.debug("\n\n********************************")
     logging.debug("OBTAINING FILES")
     logging.debug("********************************")
-    fileList = getFiles()
-    if numBountiesToPost<10:
-        logging.debug(os.listdir(ARTIFACT_DIRECTORY))
+    fileList = getFiles(bounty_directory)
+    logging.debug(os.listdir(bounty_directory))
     logging.debug("\n\n******************************************************")
-    logging.debug("CREATING "+ str(numBountiesToPost) + "BOUNTIES")
+    logging.debug("CREATING "+ str(len(fileList)) + "BOUNTIES")
     logging.debug("********************************************************")
-    bountyList = postBounties(numBountiesToPost, fileList)
+    bountyList = postBounties(len(fileList), fileList, polyswarmd_addr, keyfile, password, bid, duration, api_key, account)
     logging.debug( str(bountyList) )
     logging.debug("\n\n********************************")
     logging.debug("FINISHED BOUNTY CREATION, EXITING AMBASSADOR")
