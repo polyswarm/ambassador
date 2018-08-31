@@ -27,15 +27,15 @@ def postBounties(numToPost, files, host, keyfile, password, bid, duration, api_k
         
         logging.debug("trying to get nonce")
         headers = {'Authorization': api_key}
-
-        nonce=json.loads(requests.get('http://'+ host + '/nonce', headers=headers).text)['result']
+        # always put account into our requests
+        nonce=json.loads(requests.get('http://'+ host + '/nonce', headers=headers, params={'account': account}).text)['result']
         logging.debug("nonce received: "+str(nonce))
         #create and post artifacts 
         for i in range(0, numToPost):
                 #stop early if bounties to post is greater than the number of files
                 if numToPost > len(files):
                         break;
-                tempArtifact = Artifact(files[i], bid, host, api_key)
+                tempArtifact = Artifact(files[i], bid, host, api_key=api_key, account=account)
                 tempArtifact.postArtifact()
                 artifactArr.append(tempArtifact)
 
