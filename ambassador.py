@@ -49,6 +49,7 @@ def main(log, polyswarmd_addr, keyfile, password, bounty_directory, bid, duratio
     logging.debug('using account + %s + ...', ACCOUNT)
 
     logging.debug('should fail + %s + ...', TESTING_FAIL)
+    print(TESTING_FAIL)
 
 
     run_bounties(polyswarmd_addr, keyfile, password, bounty_directory, bid, duration, api_key, account)
