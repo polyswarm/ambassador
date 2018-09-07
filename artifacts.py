@@ -103,4 +103,6 @@ class Artifact:
         if r.json()['status'] == 'OK':
             logging.info("\n\nBounty " + self.file.name + " sent to polyswarmd.\n\n")
         else:
+            logging.debug(r.json())
             logging.warning("BOUNTY NOT POSTED!!!!!!!!!!! CHECK TX")
+            sys.exit(1)
