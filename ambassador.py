@@ -34,16 +34,17 @@ BID = os.environ.get('BID','625000000000000000')
         help='Bid for the bounties you want to submit')
 @click.option('--duration', default=BOUNTY_DURATION,
         help='How long you want the bounties to run')
-@click.option('--restart', envvar='RESTART', default=None,
-        help='How many times would you like the script to retart submitting files')
+@click.option('--testing', envvar='TESTING', default=-1,
+        help='Activate testing mode for integration testing, send N bounties and N offers then exit')
 @click.option('--api-key', envvar='API_KEY', default=API_KEY,
         help='API key to use with polyswarmd')
 
-def main(log, polyswarmd_addr, keyfile, password, bounty_directory, bid, duration, restart, api_key):
+
+def main(log, polyswarmd_addr, keyfile, password, bounty_directory, bid, duration, testing, api_key):
     loglevel = getattr(logging, log.upper(), None)
     priv_key = None
     address = None
-
+    testing = int(testing)
     account = '0x' + json.loads(open(keyfile,'r').read())['address']
 
     logging.debug('using account + %s + ...', ACCOUNT)
@@ -51,14 +52,11 @@ def main(log, polyswarmd_addr, keyfile, password, bounty_directory, bid, duratio
 
     run_bounties(polyswarmd_addr, keyfile, password, bounty_directory, bid, duration, api_key, account)
 
-    if restart and int(restart) > 0:
-        for i in range(0, int(restart)):
-            logging.debug('restart: %s ...', i)
-            run_bounties(polyswarmd_addr, keyfile, password, bounty_directory, bid, duration, api_key, account)
+    for i in range(0, testing):
+        logging.debug('testing: %s ...', i)
+        run_bounties(polyswarmd_addr, keyfile, password, bounty_directory, bid, duration, api_key, account)
 
-    # not running offers atm because the introduction of websockets complicates e2e testing
-    # to run standalone run `python offers.py`
-    # run_offers()
+    run_offers(testing)
 
     sys.exit(0)
 

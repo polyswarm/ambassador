@@ -42,7 +42,7 @@ HOST = os.environ.get('POLYSWARMD_ADDR','polyswarmd:31337')
 priv_key = web3.eth.account.decrypt(open(KEYFILE,'r').read(), PASSWORD)
 
 class OfferChannel(object):
-    def __init__(self, guid, offer_amount, ambassador_balance, expert_balance, offer_directory = None):
+    def __init__(self, guid, offer_amount, ambassador_balance, expert_balance, offer_directory = None, testing=0):
         self.guid = guid
         self.offer_amount = offer_amount
         self.ambassador_balance = ambassador_balance
@@ -50,12 +50,14 @@ class OfferChannel(object):
         self.nonce = 0
         self.last_message = None
         self.artifacts = Queue()
+        self.testing = testing
 
         if offer_directory != None:
-            for file in os.listdir(offer_directory):
-                artifact = Artifact(File(file, offer_directory))
-                artifact.postArtifact()
-                self.artifacts.put(artifact)
+            for testing_count in range(0, testing):
+                for file in os.listdir(offer_directory):
+                    artifact = Artifact(File(file, offer_directory))
+                    artifact.postArtifact()
+                    self.artifacts.put(artifact)
 
     def set_state(self, state):
         # TODO: change to be a persistant database so all the assersions can be saved
@@ -90,13 +92,13 @@ async def post_transactions(session, transactions):
 
     uri = 'http://{0}/transactions'.format(HOST)
 
-    async with session.post(uri, json={'transactions': signed}) as response:
+    async with session.post(uri, json={'transactions': signed}, params={'account': ACCOUNT}) as response:
         j = await response.json()
 
         return j
 
 async def generate_state(session, **kwargs):
-    async with session.post('http://' + HOST + '/offers/state', json=kwargs) as response:
+    async with session.post('http://' + HOST + '/offers/state', json=kwargs, params={'account': ACCOUNT}) as response:
         return (await response.json())['result']['state']
 
 async def init_offer(session):
@@ -143,11 +145,11 @@ async def send_offer(session, ws, offer_channel, current_state):
 def create_signiture_dict(ambassador_sig, expert_sig, state):
     ret = { 'v': [], 'r': [], 's': [], 'state':state }
 
-    ret['v'].append(ambassador_sig['v'])
+    ret['v'].append(int(ambassador_sig['v']))
     ret['r'].append(ambassador_sig['r'])
     ret['s'].append(ambassador_sig['s'])
 
-    ret['v'].append(expert_sig['v'])
+    ret['v'].append(int(expert_sig['v']))
     ret['r'].append(expert_sig['r'])
     ret['s'].append(expert_sig['s'])
 
@@ -230,8 +232,8 @@ async def create_and_open_offer(loop, testing):
         sig = sign_state(state, priv_key)
         open_message = await open_offer(session, str(guid), sig)
         sig['type'] = 'open'
-        offer_channel = OfferChannel(guid, offer_amount, ambassador_balance, expert_balance, ARTIFACT_DIRECTORY)
-        tasks = [listen_for_messages(offer_channel, testing, sig), listen_for_offer_events(offer_channel)]
+        offer_channel = OfferChannel(guid, offer_amount, ambassador_balance, expert_balance, ARTIFACT_DIRECTORY, testing)
+        tasks = [listen_for_messages(offer_channel, sig), listen_for_offer_events(offer_channel)]
 
         await asyncio.gather(*tasks)
 
@@ -245,7 +247,7 @@ def sign_state(state, private_key):
 
     return {'r':web3.toHex(sig.r), 'v':sig.v, 's':web3.toHex(sig.s), 'state': state}
 
-async def listen_for_messages(offer_channel, testing=False, init_message = None):
+async def listen_for_messages(offer_channel, init_message = None):
     uri = 'ws://{0}/messages/{1}'.format(HOST, offer_channel.guid)
     async with aiohttp.ClientSession(headers=headers) as session:
         async with websockets.connect(uri, extra_headers=headers) as ws:
@@ -262,17 +264,20 @@ async def listen_for_messages(offer_channel, testing=False, init_message = None)
                 elif msg['type'] == 'accept':
                     accepted = await accept_state(session, ws, offer_channel, msg)
 
-                    if accepted and testing:
+                    if offer_channel.testing == 0:
                         await close_channel(session, ws, offer_channel, offer_channel.last_message)
+                        logging.info('closing channel with success!')
                         sys.exit(0)
 
                     if accepted:
                         offer_channel.set_state(msg)
+                        offer_channel.testing = offer_channel.testing - 1
                         await send_offer(session, ws, offer_channel, msg)
                     elif offer_channel.last_message['state']['isClosed'] == 1:
                         await close_channel(session, ws, offer_channel, offer_channel.last_message)
                     else:
                         await dispute_channel(session, ws, offer_channel)
+
 
                 elif msg['type'] == 'join':
                     await send_offer(session, ws, offer_channel, msg)
@@ -307,14 +312,9 @@ async def listen_for_offer_events(offer_channel):
         pass
 
 
-@click.command()
-@click.option('--testing', default=False,
-        help='Activate testing mode for integration testing, respond to 2 offers then exit')
-
-def run(testing=False):
-
+def run(testing=-1):
     # will create an offer, wait for it to be joined, and send all the offers in ARTIFACT_DIRECTORY to the OFFER_EXPERT
-    # when testing is true the script exits with 0 and closes the offer after receiving two offers
+    # when `testing` is non-zero the script exits with 0 and closes the offer channel after sending payout msgs a number of time defined by `testing`
 
     loop = asyncio.get_event_loop()
     try:
