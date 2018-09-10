@@ -12,7 +12,7 @@ from web3.middleware import geth_poa_middleware
 from artifacts import File, Artifact
 
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 w3=Web3(HTTPProvider(os.environ.get('GETH_ADDR','http://geth:8545')))
 w3.middleware_stack.inject(geth_poa_middleware,layer=0)
 
@@ -25,11 +25,11 @@ def postBounties(numToPost, files, host, keyfile, password, bid, duration, api_k
         artifactArr = []
         bountyArr = []
         
-        logging.debug("trying to get nonce")
+        logging.info("trying to get nonce")
         headers = {'Authorization': api_key}
         # always put account into our requests
         nonce=json.loads(requests.get('http://'+ host + '/nonce', headers=headers, params={'account': account}).text)['result']
-        logging.debug("nonce received: "+str(nonce))
+        logging.info("nonce received: "+str(nonce))
         #create and post artifacts 
         for i in range(0, numToPost):
                 #stop early if bounties to post is greater than the number of files
@@ -50,7 +50,7 @@ def postBounties(numToPost, files, host, keyfile, password, bid, duration, api_k
 
                 tempBounty = artifactArr[curArtifact]
                 tempBounty.postBounty(duration, keyfile, password, account)
-                logging.debug('posted bounty with nonce '+ str(nonce))
+                logging.info('posted bounty with nonce '+ str(nonce))
                 bountyArr.append(tempBounty)
                 curArtifact+=1
         return bountyArr
@@ -70,19 +70,19 @@ def getFiles(directory):
 def run_test(polyswarmd_addr, keyfile, password, bounty_directory, bid, duration, api_key, account):
     #default bounties to post
 
-    logging.debug("\n\n********************************")
-    logging.debug("OBTAINING FILES")
-    logging.debug("********************************")
+    logging.info("\n\n********************************")
+    logging.info("OBTAINING FILES")
+    logging.info("********************************")
     fileList = getFiles(bounty_directory)
-    logging.debug(os.listdir(bounty_directory))
-    logging.debug("\n\n******************************************************")
-    logging.debug("CREATING "+ str(len(fileList)) + "BOUNTIES")
-    logging.debug("********************************************************")
+    logging.info(os.listdir(bounty_directory))
+    logging.info("\n\n******************************************************")
+    logging.info("CREATING "+ str(len(fileList)) + "BOUNTIES")
+    logging.info("********************************************************")
     bountyList = postBounties(len(fileList), fileList, polyswarmd_addr, keyfile, password, bid, duration, api_key, account)
-    logging.debug( str(bountyList) )
-    logging.debug("\n\n********************************")
-    logging.debug("FINISHED BOUNTY CREATION, EXITING AMBASSADOR")
-    logging.debug("********************************\n\n")
+    logging.info( str(bountyList) )
+    logging.info("\n\n********************************")
+    logging.info("FINISHED BOUNTY CREATION, EXITING AMBASSADOR")
+    logging.info("********************************\n\n")
 
 if __name__ == "__main__":
     run_test()

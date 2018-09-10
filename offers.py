@@ -21,24 +21,25 @@ from web3 import Web3,HTTPProvider
 from web3.middleware import geth_poa_middleware
 from artifacts import File, Artifact
 from queue import Queue
-
+from pprint import pprint, pformat
 import click
 import logging
 import sys
 
 logging.basicConfig(level=logging.INFO)
 
+OFFER_AMOUNT = os.environ.get('OFFER_AMOUNT', 2500000000000000)
+AMBASSADOR_BALANCE = os.environ.get('AMBASSADOR_BALANCE', 90000000000000000)
 ARTIFACT_DIRECTORY = os.environ.get('ARTIFACT_DIRECTORY','./bounties/')
 KEYFILE = os.environ.get('KEYFILE','keyfile')
 HOST = os.environ.get('POLYSWARMD_ADDR','polyswarmd:31337')
 PASSWORD = os.environ.get('PASSWORD','password')
 ACCOUNT = '0x' + json.loads(open(KEYFILE,'r').read())['address']
-logging.debug('using account ' + ACCOUNT + "...")
+logging.info('using account ' + ACCOUNT + "...")
 API_KEY = os.environ.get('API_KEY', '')
 headers = { 'Authorization': API_KEY }
 EXPERT= os.environ.get('OFFER_EXPERT', '0x05328f171b8c1463eafdacca478d9ee6a1d923f8')
 
-HOST = os.environ.get('POLYSWARMD_ADDR','polyswarmd:31337')
 priv_key = web3.eth.account.decrypt(open(KEYFILE,'r').read(), PASSWORD)
 
 class OfferChannel(object):
@@ -51,6 +52,8 @@ class OfferChannel(object):
         self.last_message = None
         self.artifacts = Queue()
         self.testing = testing
+        self.event_socket = None
+        self.msg_socket = None
 
         if offer_directory != None:
             for testing_count in range(0, testing):
@@ -67,6 +70,13 @@ class OfferChannel(object):
     def get_next_artifact(self):
         if not self.artifacts.empty():
             return self.artifacts.get()
+
+    async def close_sockets(self):
+        if self.event_socket:
+            await self.event_socket.close()
+
+        if self.msg_socket:
+            await self.msg_socket.close()
 
     def __eq__(self, other):
         return self.guid == other.guid
@@ -102,12 +112,12 @@ async def generate_state(session, **kwargs):
         return (await response.json())['result']['state']
 
 async def init_offer(session):
-    async with session.post('http://' + HOST + '/offers?account=' + ACCOUNT, json={'ambassador': ACCOUNT, 'expert': EXPERT, 'settlementPeriodLength': 100}) as response:
+    async with session.post('http://' + HOST + '/offers?account=' + ACCOUNT, json={'ambassador': ACCOUNT, 'expert': EXPERT, 'settlementPeriodLength': 10 }) as response:
         response = await response.json()
 
     transactions = response['result']['transactions']
-
-    offer_info = (await post_transactions(session, transactions))['result']['offers_initialized'][0] # TODO this array is weird - should be a dict
+    offer_info = await post_transactions(session, transactions)
+    offer_info = offer_info['result']['offers_initialized'][0]
 
     return offer_info
 
@@ -123,24 +133,41 @@ async def open_offer(session, guid, signiture):
 
 
 async def run_sockets(testing, loop = False):
+    if testing > 0:
+        # testing 1 dispute
+        await create_offer_dispute(loop, 1)
 
-    tasks = [create_and_open_offer(loop, testing)]
-
-    await asyncio.gather(*tasks)
+    await create_and_open_offer(loop, testing)
 
 async def send_offer(session, ws, offer_channel, current_state):
-
     if current_state['state']['nonce'] == offer_channel.nonce:
         artifact = offer_channel.get_next_artifact()
         if artifact:
-            state = await generate_state(session, close_flag=1, nonce=offer_channel.nonce, ambassador=ACCOUNT, expert=EXPERT, msig_address= current_state['state']['msig_address'], ambassador_balance= current_state['state']['ambassador_balance'], expert_balance= current_state['state']['expert_balance'], artifact_hash=artifact.uri, guid=str(offer_channel.guid.int), offer_amount=offer_channel.offer_amount)
+            offer_state = dict(offer_channel.last_message['state'])
+            offer_state['close_flag'] = 1
+            offer_state['artifact_hash'] = artifact.uri
+            offer_state['nonce'] = offer_channel.nonce # this is the updated nonce
+            offer_state['offer_amount'] = offer_channel.offer_amount
+            offer_state['guid'] = str(offer_channel.guid.int)
+
+            # delete previous offer verdicts/mask
+            if 'verdicts' in offer_state:
+                del offer_state['verdicts']
+
+            if 'mask' in offer_state:
+                del offer_state['mask']
+
+            state = await generate_state(session, **offer_state)
             sig = sign_state(state, priv_key)
+
             sig['type'] = 'offer'
-            # TODO: can't fit hash on state and moving to be apart of the message object
             sig['artifact'] = artifact.uri
+
+            logging.info('Sending New Offer: \n%s', pformat(offer_state))
+
             await ws.send(
                 json.dumps(sig)
-            )                             
+            )                                        
 
 def create_signiture_dict(ambassador_sig, expert_sig, state):
     ret = { 'v': [], 'r': [], 's': [], 'state':state }
@@ -159,7 +186,8 @@ async def dispute_channel(session, ws, offer_channel):
     prev_state = offer_channel.last_message
     sig = sign_state(prev_state['raw_state'], priv_key)
 
-    async with session.post('http://' + HOST + '/offers/' + str(offer_channel.guid) + '/settle?account=' + ACCOUNT, json=create_signiture_dict(sig, prev_state, prev_state['raw_state'])) as response:
+    async with session.post('http://' + HOST + '/offers/' + str(offer_channel.guid) + '/settle?account=' + ACCOUNT,
+        json=create_signiture_dict(sig, prev_state, prev_state['raw_state'])) as response:
         response = await response.json()
 
     transactions = response['result']['transactions']
@@ -171,7 +199,8 @@ async def dispute_channel(session, ws, offer_channel):
 async def close_channel(session, ws, offer_channel, current_state):
     sig = sign_state(current_state['raw_state'], priv_key)
 
-    async with session.post('http://' + HOST + '/offers/' + str(offer_channel.guid) + '/close?account=' + ACCOUNT, json=create_signiture_dict(sig, current_state, current_state['raw_state'])) as response:
+    async with session.post('http://' + HOST + '/offers/' + str(offer_channel.guid) + '/close?account=' + ACCOUNT,
+        json=create_signiture_dict(sig, current_state, current_state['raw_state'])) as response:
         response = await response.json()
 
     transactions = response['result']['transactions']
@@ -185,7 +214,8 @@ async def challenge_settle(session, ws, offer_channel):
 
     sig = sign_state(prev_state['raw_state'], priv_key)
 
-    async with session.post('http://' + HOST + '/offers/' + str(offer_channel.guid) + '/challenge?account=' + ACCOUNT, json=create_signiture_dict(sig, prev_state, prev_state['raw_state'])) as response:
+    async with session.post('http://' + HOST + '/offers/' + str(offer_channel.guid) + '/challenge?account=' + ACCOUNT,
+        json=create_signiture_dict(sig, prev_state, prev_state['raw_state'])) as response:
         response = await response.json()
 
     transactions = response['result']['transactions']
@@ -201,7 +231,6 @@ async def accept_state(session, ws, offer_channel, current_state):
     # check that the balances are correct
 
     # TODO: Check signiture came from right participant
-
     if current_state['state']['nonce'] == offer_channel.nonce + 1 and offer_channel.ambassador_balance == current_state['state']['ambassador_balance'] + offer_channel.offer_amount and offer_channel.expert_balance == current_state['state']['expert_balance'] - offer_channel.offer_amount and current_state['state']['guid'] == offer_channel.guid.int and 'verdicts' in current_state['state']:
         offer_channel.nonce += 1
         offer_channel.ambassador_balance = current_state['state']['ambassador_balance']
@@ -216,26 +245,59 @@ async def accept_state(session, ws, offer_channel, current_state):
     else:
         return False
 
-
 async def create_and_open_offer(loop, testing):
+
     async with aiohttp.ClientSession(headers=headers) as session:
         offer_info = await init_offer(session)
-        offer_amount = 1
-        ambassador_balance = 30
+        offer_amount = OFFER_AMOUNT
+        ambassador_balance = AMBASSADOR_BALANCE
         expert_balance = 0
         nonce = 0
 
         # TODO polyswarmd should be sending over the string version of ids
         guid = UUID(int=offer_info['guid'], version=4)
         msig = offer_info['msig']
-        state = await generate_state(session, close_flag=1, nonce=nonce, ambassador=ACCOUNT, expert=EXPERT, msig_address=msig, ambassador_balance=ambassador_balance, expert_balance=expert_balance, guid=str(guid.int), offer_amount=1)
+        state = await generate_state(session, close_flag=1, nonce=nonce, ambassador=ACCOUNT, expert=EXPERT,
+            msig_address=msig, ambassador_balance=ambassador_balance, expert_balance=expert_balance,
+            guid=str(guid.int), offer_amount=offer_amount)
         sig = sign_state(state, priv_key)
         open_message = await open_offer(session, str(guid), sig)
         sig['type'] = 'open'
         offer_channel = OfferChannel(guid, offer_amount, ambassador_balance, expert_balance, ARTIFACT_DIRECTORY, testing)
-        tasks = [listen_for_messages(offer_channel, sig), listen_for_offer_events(offer_channel)]
 
-        await asyncio.gather(*tasks)
+        tasks = [loop.create_task(listen_for_messages(offer_channel, sig)), loop.create_task(listen_for_offer_events(offer_channel))]
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+        offer_channel.tasks = pending
+        for pending_task in pending:
+            pending_task.cancel()
+
+async def create_offer_dispute(loop, testing):
+    async with aiohttp.ClientSession(headers=headers) as session:
+        offer_info = await init_offer(session)
+        offer_amount = OFFER_AMOUNT
+        ambassador_balance = AMBASSADOR_BALANCE
+        expert_balance = 0
+        nonce = 0
+
+        # TODO polyswarmd should be sending over the string version of ids
+        guid = UUID(int=offer_info['guid'], version=4)
+        msig = offer_info['msig']
+        state = await generate_state(session, close_flag=1, nonce=nonce, ambassador=ACCOUNT, expert=EXPERT,
+            msig_address=msig, ambassador_balance=ambassador_balance, expert_balance=expert_balance,
+            guid=str(guid.int), offer_amount=offer_amount)
+        sig = sign_state(state, priv_key)
+        open_message = await open_offer(session, str(guid), sig)
+        sig['type'] = 'open'
+
+        # change offer amount to 0 to cause a dispute
+        offer_amount = 0
+        offer_channel = OfferChannel(guid, offer_amount, ambassador_balance, expert_balance, ARTIFACT_DIRECTORY, testing)
+
+        tasks = [loop.create_task(listen_for_messages(offer_channel, sig)), loop.create_task(listen_for_offer_events(offer_channel))]
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+
+        for pending_task in pending:
+            pending_task.cancel()
 
 def sign_state(state, private_key):
     def to_32byte_hex(val):
@@ -249,65 +311,99 @@ def sign_state(state, private_key):
 
 async def listen_for_messages(offer_channel, init_message = None):
     uri = 'ws://{0}/messages/{1}'.format(HOST, offer_channel.guid)
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with websockets.connect(uri, extra_headers=headers) as ws:
-            # send open message on init
-            if init_message != None:
-                await ws.send(
-                    json.dumps(init_message)
-                )
+    try:
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with websockets.connect(uri, extra_headers=headers) as ws:
+                offer_channel.msg_socket = ws;
 
-            while not ws.closed:
-                msg = json.loads(await ws.recv())
-                if msg['type'] == 'decline':
-                    pass
-                elif msg['type'] == 'accept':
-                    accepted = await accept_state(session, ws, offer_channel, msg)
+                # send open message on init
+                if init_message != None:
+                    logging.info('Sending Open Channel Message: \n%s', pformat(init_message['state']))
+                    await ws.send(
+                        json.dumps(init_message)
+                    )
 
-                    if offer_channel.testing == 0:
-                        await close_channel(session, ws, offer_channel, offer_channel.last_message)
-                        logging.info('closing channel with success!')
-                        sys.exit(0)
+                while not ws.closed:
+                    msg = json.loads(await ws.recv())
+                    if msg['type'] == 'decline':
+                        pass
+                    elif msg['type'] == 'accept':
+                        accepted = await accept_state(session, ws, offer_channel, msg)
 
-                    if accepted:
+                        if offer_channel.testing > 0:
+                            offer_channel.testing = offer_channel.testing - 1
+                            logging.info('Offers left to send %s', offer_channel.testing)
+
+
+                        if accepted:
+                            logging.info('Offer Accepted: \n%s', pformat(msg['state']))
+                            offer_channel.set_state(msg)
+                            await send_offer(session, ws, offer_channel, msg)
+                        elif offer_channel.last_message['state']['isClosed'] == 1:
+                            logging.info('Rejected State: \n%s', pformat(msg['state']))
+                            logging.info('Closing channel with: \n%s', pformat(offer_channel.last_message['state']))
+                            await close_channel(session, ws, offer_channel, offer_channel.last_message)
+                        else:
+                            logging.info('Rejected State: \n%s', pformat(msg['state']))
+                            logging.info('Dispting channel with: \n%s', pformat(offer_channel.last_message['state']))
+                            await dispute_channel(session, ws, offer_channel)
+
+                        if offer_channel.testing == 0:
+                            await close_channel(session, ws, offer_channel, offer_channel.last_message)
+                            logging.info('Closing Channel: \n%s', pformat(msg['state']))
+                            await offer_channel.close_sockets()
+                            sys.exit(0)
+
+                    elif msg['type'] == 'join':
                         offer_channel.set_state(msg)
-                        offer_channel.testing = offer_channel.testing - 1
+                        logging.info('Channel Joined \n%s', pformat(msg['state']))
+
+                        if offer_channel.testing > 0:
+                            offer_channel.testing = offer_channel.testing - 1
+                            logging.info('Offers left to send %s', offer_channel.testing)
                         await send_offer(session, ws, offer_channel, msg)
-                    elif offer_channel.last_message['state']['isClosed'] == 1:
-                        await close_channel(session, ws, offer_channel, offer_channel.last_message)
-                    else:
-                        await dispute_channel(session, ws, offer_channel)
 
-
-                elif msg['type'] == 'join':
-                    await send_offer(session, ws, offer_channel, msg)
-                    offer_channel.set_state(msg)
-
-                elif msg['type'] == 'close':
-                    await close_channel(session, ws, offer_channel, msg)
-
+                    elif msg['type'] == 'close':
+                        await close_channel(session, ws, offer_channel, msg)
+                        await offer_channel.close_sockets()
+    except Exception as e:
+        logging.error('ERROR IN MESSAGE SOCKET!')
+        logging.error(str(e))
+        raise e
+    else:
+        pass
 
 async def listen_for_offer_events(offer_channel):
     uri = 'ws://{0}/events/{1}'.format(HOST, offer_channel.guid)
     try:
         async with aiohttp.ClientSession(headers=headers) as session:
             async with websockets.connect(uri, extra_headers=headers) as ws:
+                offer_channel.event_socket = ws;
                 while not ws.closed:
                     event = json.loads(await ws.recv())
 
                     if event['event'] == 'closed_agreement':
-                        ws.close()
-                        pass
+                        logging.info('Offer Closed: \n%s', pformat(event['data']))
+
+                        await offer_channel.close_sockets()
+
                     elif event['event'] == 'settle_started':
                         nonce = int(event['data']['nonce'])
-                        if nonce < offer_channel.nonce:
-                            await challenge_settle(session, ws, offer_channel, offer_channel.last_message)
-                    elif event['event'] == 'settle_challenged':
+                        logging.info('Offer Dispute Settle Started: \n%s', pformat(event['data']))
+
                         if nonce < offer_channel.nonce:
                             await challenge_settle(session, ws, offer_channel, offer_channel.last_message)
 
+                    elif event['event'] == 'settle_challenged':
+                        if nonce < offer_channel.nonce:
+                            logging.info('Offer Dispute Settle Challenged: \n%s', pformat(event['data']))
+                            await challenge_settle(session, ws, offer_channel, offer_channel.last_message)
+
     except Exception as e:
+        logging.error('ERROR IN EVENT SOCKET!')
+        logging.error(str(e))
         raise e
+
     else:
         pass
 

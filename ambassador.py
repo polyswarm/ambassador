@@ -20,7 +20,7 @@ BOUNTY_DURATION = os.environ.get('BOUNTY_DURATION',25)
 BID = os.environ.get('BID','625000000000000000')
 
 @click.command()
-@click.option('--log', default='DEBUG',
+@click.option('--log', default='INFO',
         help='Logging level')
 @click.option('--polyswarmd-addr', envvar='POLYSWARMD_HOST', default=HOST,
         help='Address of polyswarmd instance')
@@ -38,16 +38,17 @@ BID = os.environ.get('BID','625000000000000000')
         help='Activate testing mode for integration testing, send N bounties and N offers then exit')
 @click.option('--api-key', envvar='API_KEY', default=API_KEY,
         help='API key to use with polyswarmd')
+@click.option('--offers', envvar='OFFERS', default=False, is_flag=True,
+        help='Should the abassador send offers')
 
-
-def main(log, polyswarmd_addr, keyfile, password, bounty_directory, bid, duration, testing, api_key):
+def main(log, polyswarmd_addr, keyfile, password, bounty_directory, bid, duration, testing, api_key, offers):
     loglevel = getattr(logging, log.upper(), None)
     priv_key = None
     address = None
     testing = int(testing)
     account = '0x' + json.loads(open(keyfile,'r').read())['address']
 
-    logging.debug('using account + %s + ...', ACCOUNT)
+    logging.info('using account + %s + ...', ACCOUNT)
 
 
     run_bounties(polyswarmd_addr, keyfile, password, bounty_directory, bid, duration, api_key, account)
@@ -56,7 +57,8 @@ def main(log, polyswarmd_addr, keyfile, password, bounty_directory, bid, duratio
         logging.debug('testing: %s ...', i)
         run_bounties(polyswarmd_addr, keyfile, password, bounty_directory, bid, duration, api_key, account)
 
-    run_offers(testing)
+    if offers:
+        run_offers(testing)
 
     sys.exit(0)
 
