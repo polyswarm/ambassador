@@ -3,7 +3,9 @@ import importlib
 import logging
 import sys
 
-from ambassador.filesystem import FilesystemAmbassador
+from ambassador.eicar import EicarAmbassador
+#from ambassador.filesystem import FilesystemAmbassador
+
 
 def choose_backend(backend):
     """Resolves amabassador name string to implementation
@@ -18,8 +20,10 @@ def choose_backend(backend):
         (Exception): If backend is not found
     """
     ambassador_class = None
-    if backend == 'filesystem':
-        ambassador_class = FilesystemAmbassador
+    if backend == 'eicar':
+        ambassador_class = EicarAmbassador
+    #elif backend == 'filesystem':
+    #    ambassador_class = FilesystemAmbassador
     else:
         import_l = backend.split(":")
         ambassador_module_s = import_l[0]
@@ -74,6 +78,6 @@ def main(log, polyswarmd_addr, keyfile, password, api_key, backend, testing, ins
     ambassador_class(polyswarmd_addr, keyfile, password, api_key, testing, insecure_transport).run()
 
 
-if __name__ ==  '__main__':
+if __name__ == '__main__':
     main()
 
