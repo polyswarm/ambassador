@@ -4,7 +4,7 @@ import logging
 import sys
 
 from ambassador.eicar import EicarAmbassador
-#from ambassador.filesystem import FilesystemAmbassador
+from ambassador.filesystem import FilesystemAmbassador
 
 
 def choose_backend(backend):
@@ -22,8 +22,8 @@ def choose_backend(backend):
     ambassador_class = None
     if backend == 'eicar':
         ambassador_class = EicarAmbassador
-    #elif backend == 'filesystem':
-    #    ambassador_class = FilesystemAmbassador
+    elif backend == 'filesystem':
+        ambassador_class = FilesystemAmbassador
     else:
         import_l = backend.split(":")
         ambassador_module_s = import_l[0]

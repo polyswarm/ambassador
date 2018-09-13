@@ -1,15 +1,13 @@
-import base64
 import logging
 import random
+import os
 
 from polyswarmclient.ambassador import Ambassador
 
-EICAR = base64.b64decode(b'WDVPIVAlQEFQWzRcUFpYNTQoUF4pN0NDKTd9JEVJQ0FSLVNUQU5EQVJELUFOVElWSVJVUy1URVNULUZJTEUhJEgrSCo=')
-NOT_EICAR = 'this is not malicious'
-ARTIFACTS = [('eicar', EICAR), ('not_eicar', NOT_EICAR)]
+ARTIFACT_DIRECTORY = os.getenv('ARTIFACT_DIRECTORY', 'docker/artifacts')
 
-class EicarAmbassador(Ambassador):
-    """Ambassador which submits the EICAR test file"""
+class FilesystemAmbassador(Ambassador):
+    """Ambassador which submits artifacts from a directory"""
 
     async def next_bounty(self, chain):
         """Submit either the EICAR test string or a benign sample
@@ -22,11 +20,11 @@ class EicarAmbassador(Ambassador):
             duration (int): Duration of the bounty in blocks
         """
         amount = self.client.bounties.parameters[chain]['bounty_amount_minimum']
-        filename, content = random.choice(ARTIFACTS)
+        filename = os.path.join(ARTIFACT_DIRECTORY, random.choice(os.listdir(ARTIFACT_DIRECTORY)))
         duration = 20
 
-        logging.info('Submitting %s', filename)
-        ipfs_uri = await self.client.post_artifacts([(filename, content)])
+        logging.info('Submitting file %s', filename)
+        ipfs_uri = await self.client.post_artifacts([(filename, None)])
         if not ipfs_uri:
             logging.error('Could not submit artifact to IPFS')
             return None
